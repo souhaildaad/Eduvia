@@ -1,0 +1,65 @@
+.dashboard-container {
+  padding: 1rem;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.header-left h1 {
+  margin: 0;
+  color: #dc2626;
+}
+
+.user-info h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.user-info p {
+  margin: 0;
+  color: #6b7280;
+}
+
+.header-right {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.progress-card, .notifications-card {
+  margin-bottom: 1rem;
+}
+
+.tab-content {
+  padding: 1rem 0;
+}
+
+.course-card {
+  margin-bottom: 1rem;
+}
+
+.notification {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.exam-icon {
+  color: #dc2626;
+}
+
+.motivation-icon {
+  color: #10b981;
+}
+
+.chatbot-overlay {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 1000;
+}

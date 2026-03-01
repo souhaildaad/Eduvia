@@ -1,0 +1,89 @@
+<div class="dashboard-container">
+  <!-- Header -->
+  <header class="dashboard-header">
+    <div class="header-left">
+      <h1>Tableau de Bord Étudiant</h1>
+      <div class="user-info">
+        <h2>{{ studentData.name }}</h2>
+        <p>{{ studentData.level }}</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <button mat-icon-button (click)="toggleChatbot()" class="chatbot-toggle">
+        <mat-icon>chat</mat-icon>
+      </button>
+      <button mat-raised-button color="warn" (click)="onLogout()">
+        <mat-icon>logout</mat-icon>
+        Déconnexion
+      </button>
+    </div>
+  </header>
+
+  <!-- Progress Overview -->
+  <mat-card class="progress-card">
+    <mat-card-header>
+      <mat-card-title>Progression Globale</mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      <mat-progress-bar mode="determinate" [value]="studentData.overallProgress"></mat-progress-bar>
+      <p>{{ studentData.overallProgress }}% complété</p>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- Notifications -->
+  <mat-card class="notifications-card">
+    <mat-card-header>
+      <mat-card-title>Notifications</mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      <div *ngFor="let notification of studentData.notifications" class="notification">
+        <mat-icon [class]="notification.type === 'exam' ? 'exam-icon' : 'motivation-icon'">
+          {{ notification.type === 'exam' ? 'event' : 'celebration' }}
+        </mat-icon>
+        <span>{{ notification.text }}</span>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- Tabs -->
+  <mat-tab-group>
+    <mat-tab label="Aperçu">
+      <div class="tab-content">
+        <h3>Cours en cours</h3>
+        <mat-card *ngFor="let course of studentData.currentCourses" class="course-card">
+          <mat-card-header>
+            <mat-card-title>{{ course.name }}</mat-card-title>
+            <mat-card-subtitle>{{ course.status }}</mat-card-subtitle>
+          </mat-card-header>
+          <mat-card-content>
+            <mat-progress-bar mode="determinate" [value]="course.progress"></mat-progress-bar>
+            <p>{{ course.progress }}% complété</p>
+          </mat-card-content>
+        </mat-card>
+      </div>
+    </mat-tab>
+    <mat-tab label="Évaluation IA">
+      <app-ai-assessment></app-ai-assessment>
+    </mat-tab>
+    <mat-tab label="Quiz">
+      <app-course-quiz></app-course-quiz>
+    </mat-tab>
+    <mat-tab label="Recommandations">
+      <app-recommendation-system></app-recommendation-system>
+    </mat-tab>
+    <mat-tab label="Évaluations">
+      <app-rating-system></app-rating-system>
+    </mat-tab>
+    <mat-tab label="Forum">
+      <app-student-forum></app-student-forum>
+    </mat-tab>
+    <mat-tab label="Clubs">
+      <app-club-suggestions></app-club-suggestions>
+    </mat-tab>
+  </mat-tab-group>
+
+  <!-- Chatbot -->
+  <div *ngIf="showChatbot" class="chatbot-overlay">
+    <app-chatbot (close)="toggleChatbot()"></app-chatbot>
+  </div>
+</div>

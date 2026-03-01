@@ -1,0 +1,70 @@
+version: "3.9"
+
+services:
+
+  frontend:
+    build: ../EduVia-Frontend
+    container_name: eduvia-frontend
+    ports:
+      - "4200:4200"
+    depends_on:
+      - backend
+
+  backend:
+    build: ../EduVia-Backend
+    container_name: eduvia-backend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mongodb
+      - keycloak
+    environment:
+      MONGO_URI: mongodb://mongodb:27017/eduvia
+
+  ai:
+    build: ../EduVia-AI
+    container_name: eduvia-ai
+    ports:
+      - "5000:5000"
+
+  mongodb:
+    image: mongo:7
+    container_name: eduvia-mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  postgres:
+    image: postgres:15
+    container_name: eduvia-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: eduvia
+      POSTGRES_PASSWORD: eduvia
+      POSTGRES_DB: keycloak_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.2
+    container_name: eduvia-keycloak
+    command: start-dev
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_db
+      KC_DB_USERNAME: eduvia
+      KC_DB_PASSWORD: eduvia
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+
+volumes:
+  mongo_data:
+  postgres_data:
