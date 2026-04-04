@@ -3,325 +3,647 @@ import {
   UnauthorizedException,
   HttpException,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
 import axios from 'axios';
 import KcAdminClient from '@keycloak/keycloak-admin-client';
-// import { UsersService } from '../users/users.service';         // Décommente quand MongoDB est actif
-// import { EmailService } from '../email/email.service';        // Décommente quand tu utilises ton service email
+import { URL } from 'url';
+
+import { UsersService } from '../users/users.service';
+import { User } from '../users/user.schema';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class AuthService {
-  private readonly keycloakUrl: string;
-  private readonly realm: string;
-  private readonly clientId: string;
-  private readonly clientSecret: string;
-  private readonly adminUsername: string;
-  private readonly adminPassword: string;
-
   private kcAdmin: KcAdminClient;
+  private readonly logger = new Logger(AuthService.name);
+
+  private resolveAppRole(roles: string[]): 'admin' | 'teacher' | 'student' | null {
+    if (roles.includes('admin')) return 'admin';
+    if (roles.includes('teacher')) return 'teacher';
+    if (roles.includes('student')) return 'student';
+    return null;
+  }
+
+  private async authenticateAdmin(): Promise<void> {
+    const adminRealm = this.configService.get('KEYCLOAK_ADMIN_REALM') || 'master';
+    const targetRealm = this.configService.get('KEYCLOAK_REALM') || 'master';
+
+    this.kcAdmin.setConfig({ realmName: adminRealm });
+
+    await this.kcAdmin.auth({
+      username:
+        this.configService.get('KEYCLOAK_ADMIN_USERNAME') ||
+        this.configService.get('KEYCLOAK_ADMIN_USER'),
+      password: this.configService.get('KEYCLOAK_ADMIN_PASSWORD'),
+      grantType: 'password',
+      clientId: 'admin-cli',
+    });
+
+    this.kcAdmin.setConfig({ realmName: targetRealm });
+  }
+
+  private async syncUserToMongo(params: {
+    userId: string;
+    email: string;
+    role: 'teacher' | 'student' | 'admin';
+    username: string;
+    firstName?: string;
+    lastName?: string;
+  }) {
+    const { userId, email, role, username, firstName, lastName } = params;
+    const updateData = {
+      keycloakId: userId,
+      email,
+      role,
+      firstName: firstName?.trim() || username,
+      lastName: lastName?.trim() || role,
+      passwordChanged: false,
+      isBlocked: false,
+    };
+
+    const existingByKeycloakId = await this.userModel.findOne({ keycloakId: userId });
+    if (existingByKeycloakId) {
+      Object.assign(existingByKeycloakId, updateData);
+      return existingByKeycloakId.save();
+    }
+
+    const existingByEmail = await this.userModel.findOne({ email });
+    if (existingByEmail) {
+      Object.assign(existingByEmail, updateData);
+      return existingByEmail.save();
+    }
+
+    return this.userModel.create(updateData);
+  }
+
+  private async findManagedUserOrThrow(identifier: string) {
+    const query = Types.ObjectId.isValid(identifier)
+      ? { $or: [{ _id: identifier }, { keycloakId: identifier }] }
+      : { keycloakId: identifier };
+
+    const user = await this.userModel.findOne(query);
+
+    if (!user) {
+      throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+    }
+
+    return user;
+  }
+
+  private async ensureRealmRoleAssigned(
+    userId: string,
+    role: 'teacher' | 'student',
+  ): Promise<void> {
+    const roleRep = await this.kcAdmin.roles.findOneByName({ name: role });
+    if (!roleRep || !roleRep.id || !roleRep.name) {
+      throw new HttpException(
+        `Role '${role}' not found or invalid in Keycloak`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const currentRoles = await this.kcAdmin.users.listRealmRoleMappings({ id: userId });
+    const removableRoles = currentRoles.filter((mappedRole: any) =>
+      ['teacher', 'student'].includes(mappedRole.name),
+    );
+
+    if (removableRoles.length > 0) {
+      await this.kcAdmin.users.delRealmRoleMappings({
+        id: userId,
+        roles: removableRoles.map((mappedRole: any) => ({
+          id: mappedRole.id,
+          name: mappedRole.name,
+        })),
+      });
+    }
+
+    await this.kcAdmin.users.addRealmRoleMappings({
+      id: userId,
+      roles: [
+        {
+          ...roleRep,
+          id: roleRep.id,
+          name: roleRep.name,
+        },
+      ],
+    });
+  }
+
+  private getEmailVerificationSecret(): string {
+    return (
+      this.configService.get('EMAIL_VERIFICATION_SECRET') ||
+      this.configService.get('JWT_SECRET') ||
+      this.configService.get('KEYCLOAK_CLIENT_SECRET') ||
+      'eduvia-email-verification-secret'
+    );
+  }
+
+  private buildEmailVerificationLink(params: {
+    userId: string;
+    email: string;
+    role: 'teacher' | 'student';
+  }): string {
+    const backendUrl =
+      this.configService.get('BACKEND_URL') || 'http://localhost:3000';
+    const token = this.jwtService.sign(
+      {
+        sub: params.userId,
+        email: params.email,
+        role: params.role,
+        type: 'email-verification',
+      },
+      {
+        secret: this.getEmailVerificationSecret(),
+        expiresIn: '7d',
+      },
+    );
+
+    return `${backendUrl}/auth/verify-email?token=${encodeURIComponent(token)}`;
+  }
+
+  private async inspectKeycloakLoginBlockers(email: string): Promise<{
+    exists: boolean;
+    enabled?: boolean;
+    emailVerified?: boolean;
+    requiredActions?: string[];
+  }> {
+    await this.authenticateAdmin();
+
+    const users = await this.kcAdmin.users.find({ email, exact: true });
+    const user = users.find(
+      (candidate: any) => candidate.email?.toLowerCase() === email.toLowerCase(),
+    );
+
+    if (!user) {
+      return { exists: false };
+    }
+
+    return {
+      exists: true,
+      enabled: user.enabled,
+      emailVerified: user.emailVerified,
+      requiredActions: Array.isArray(user.requiredActions) ? user.requiredActions : [],
+    };
+  }
 
   constructor(
     private configService: ConfigService,
     private jwtService: JwtService,
-    // private usersService: UsersService,     // Pour MongoDB
-    // private emailService: EmailService,     // Pour envoi emails custom
+    private usersService: UsersService,
+    private emailService: EmailService,
+    @InjectModel(User.name) private userModel: Model<User>,
   ) {
-    this.keycloakUrl = this.configService.getOrThrow<string>('KEYCLOAK_URL');
-    this.realm = this.configService.getOrThrow<string>('KEYCLOAK_REALM');
-    this.clientId = this.configService.getOrThrow<string>('KEYCLOAK_CLIENT_ID');
-    this.clientSecret = this.configService.getOrThrow<string>('KEYCLOAK_CLIENT_SECRET');
-    this.adminUsername = this.configService.getOrThrow<string>('KEYCLOAK_ADMIN_USERNAME');
-    this.adminPassword = this.configService.getOrThrow<string>('KEYCLOAK_ADMIN_PASSWORD');
-
     this.kcAdmin = new KcAdminClient({
-      baseUrl: this.keycloakUrl,
-      realmName: this.realm,
+      baseUrl: this.configService.get('KEYCLOAK_URL'),
+      realmName: this.configService.get('KEYCLOAK_REALM'),
     });
   }
 
-  // ────────────────────────────────────────────────
-  // Méthode privée : authentification admin
-  // ────────────────────────────────────────────────
-  private async authenticateAdmin(): Promise<void> {
-    try {
-      await this.kcAdmin.auth({
-        username: this.adminUsername,
-        password: this.adminPassword,
-        grantType: 'password',
-        clientId: 'admin-cli',
-      });
-    } catch (error: any) {
-      console.error('Échec authentification admin Keycloak:', error.message);
-      throw new HttpException(
-        'Erreur interne Keycloak (admin)',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-    }
-  }
-
-  // ────────────────────────────────────────────────
-  // LOGIN – User Story 1.2
-  // ────────────────────────────────────────────────
-  async login(email: string, password: string): Promise<any> {
+  // ───────── LOGIN ─────────
+  async login(email: string, password: string) {
     try {
       const response = await axios.post(
-        `${this.keycloakUrl}/realms/${this.realm}/protocol/openid-connect/token`,
+        `${this.configService.get('KEYCLOAK_URL')}/realms/${this.configService.get('KEYCLOAK_REALM')}/protocol/openid-connect/token`,
         new URLSearchParams({
           grant_type: 'password',
-          client_id: this.clientId,
-          client_secret: this.clientSecret,
+          client_id: this.configService.get('KEYCLOAK_CLIENT_ID') || '',
+          client_secret: this.configService.get('KEYCLOAK_CLIENT_SECRET') || '',
           username: email,
           password,
-          scope: 'openid profile email',
-        }).toString(),
+        }),
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
       );
 
-      const { access_token, refresh_token, expires_in } = response.data;
-      const decoded = this.jwtService.decode(access_token) as any;
+      const { access_token, refresh_token } = response.data;
+      const decoded: any = this.jwtService.decode(access_token);
 
-      // Mise à jour last login (quand MongoDB sera activé)
-      // await this.usersService.updateLastLogin(decoded.sub);
+      const userId = decoded.sub;
+      const roles = decoded.realm_access?.roles || [];
+      const appRole = this.resolveAppRole(roles);
+
+      let user = await this.userModel.findOne({ keycloakId: userId });
+
+      if (!user) {
+        user = new this.userModel({
+          keycloakId: userId,
+          email: decoded.email || 'user@test.com',
+          role: appRole || 'student',
+          firstName: decoded.given_name || 'User',
+          lastName: decoded.family_name || 'Keycloak',
+          passwordChanged: false,
+        });
+        await user.save();
+      } else if ((!user.role || !['admin', 'teacher', 'student'].includes(user.role)) && appRole) {
+        user.role = appRole;
+        await user.save();
+      }
+
+      await this.usersService.handleFirstLogin(userId);
+
+      const blocked = await this.usersService.checkAndBlockIfNeeded(userId, roles);
+      if (blocked) {
+        throw new HttpException('Compte bloqué', HttpStatus.FORBIDDEN);
+      }
+
+      // Pour les admins → on marque directement le mot de passe comme changé
+      if (roles.includes('admin')) {
+        await this.usersService.markPasswordChanged(userId);
+      }
+
+      const mainRole = appRole;
+
+      const passwordChanged = await this.usersService.isPasswordChanged(userId);
+
+      // L'obligation de changer le mot de passe ne concerne QUE teacher et student
+      const requiresPasswordChange = roles.some((role) =>
+        ['teacher', 'student'].includes(role)
+      );
 
       return {
         access_token,
         refresh_token,
-        expires_in,
         user: {
-          id: decoded.sub,
+          id: userId,
           email: decoded.email,
-          name: decoded.name || `${decoded.given_name || ''} ${decoded.family_name || ''}`.trim(),
-          preferred_username: decoded.preferred_username,
+          roles,
+          role: mainRole,
         },
+        needsPasswordChange: requiresPasswordChange && !passwordChanged,
       };
     } catch (error: any) {
-      if (error.response?.status === 401 || error.response?.data?.error === 'invalid_grant') {
-        throw new UnauthorizedException('Identifiants invalides');
+      this.logger.error(
+        `[LOGIN] Keycloak token request failed: status=${error.response?.status ?? 'unknown'} payload=${JSON.stringify(error.response?.data ?? error.message)}`,
+      );
+
+      if (
+        error.response?.status === 400 &&
+        error.response?.data?.error === 'invalid_grant' &&
+        error.response?.data?.error_description === 'Account is not fully set up'
+      ) {
+        const blockers = await this.inspectKeycloakLoginBlockers(email);
+
+        if (blockers.exists && blockers.enabled === false) {
+          throw new HttpException('Compte desactive ou bloque dans Keycloak', HttpStatus.FORBIDDEN);
+        }
+
+        if (blockers.exists && blockers.emailVerified === false) {
+          throw new HttpException(
+            'Email non verifie. Cliquez d abord sur le lien recu par email.',
+            HttpStatus.BAD_REQUEST,
+          );
+        }
+
+        if (blockers.exists && (blockers.requiredActions || []).length > 0) {
+          throw new HttpException(
+            `Compte Keycloak incomplet. Actions requises restantes: ${(blockers.requiredActions || []).join(', ')}`,
+            HttpStatus.BAD_REQUEST,
+          );
+        }
       }
-      console.error('Erreur login:', error.message);
-      throw new HttpException('Échec connexion', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
 
-  // ────────────────────────────────────────────────
-  // REFRESH TOKEN
-  // ────────────────────────────────────────────────
-  async refreshToken(refreshToken: string): Promise<any> {
-    try {
-      const response = await axios.post(
-        `${this.keycloakUrl}/realms/${this.realm}/protocol/openid-connect/token`,
-        new URLSearchParams({
-          grant_type: 'refresh_token',
-          client_id: this.clientId,
-          client_secret: this.clientSecret,
-          refresh_token: refreshToken,
-        }).toString(),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
-      );
-
-      return {
-        access_token: response.data.access_token,
-        refresh_token: response.data.refresh_token || refreshToken,
-        expires_in: response.data.expires_in,
-      };
-    } catch (error: any) {
-      console.error('Erreur refresh:', error.response?.data || error.message);
-      throw new UnauthorizedException('Token de rafraîchissement invalide');
-    }
-  }
-
-  // ────────────────────────────────────────────────
-  // LOGOUT – User Story 1.6
-  // ────────────────────────────────────────────────
-  async logout(refreshToken: string): Promise<boolean> {
-    try {
-      await axios.post(
-        `${this.keycloakUrl}/realms/${this.realm}/protocol/openid-connect/logout`,
-        new URLSearchParams({
-          client_id: this.clientId,
-          client_secret: this.clientSecret,
-          refresh_token: refreshToken,
-        }).toString(),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
-      );
-      return true;
-    } catch (error: any) {
-      console.warn('Logout échoué (peut-être déjà invalide):', error.message);
-      return false;
-    }
-  }
-
-  // ────────────────────────────────────────────────
-  // CHANGE PASSWORD – User Story 1.3
-  // ────────────────────────────────────────────────
-  async changePassword(userId: string, newPassword: string): Promise<void> {
-    try {
-      await this.authenticateAdmin();
-
-      await this.kcAdmin.users.resetPassword({
-        id: userId,
-        credential: {
-          type: 'password',
-          value: newPassword,
-          temporary: false,
-        },
-      });
-
-      // await this.usersService.markPasswordChanged(userId); // Quand MongoDB actif
-    } catch (error: any) {
-      console.error('Erreur changement mot de passe:', error);
+      if (error.response?.status === 401) {
+        throw new UnauthorizedException(
+          error.response?.data?.error_description ||
+            error.response?.data?.error ||
+            'Identifiants invalides',
+        );
+      }
       throw new HttpException(
-        'Échec changement mot de passe',
+        error.response?.data?.error_description || 'Echec connexion',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
   }
 
-  // ────────────────────────────────────────────────
-  // FORGOT PASSWORD – User Story 1.4
-  // ────────────────────────────────────────────────
-  async forgotPassword(email: string): Promise<void> {
+  // ───────── LOGOUT ─────────
+  async logout(refreshToken: string) {
+    await axios.post(
+      `${this.configService.get('KEYCLOAK_URL')}/realms/${this.configService.get('KEYCLOAK_REALM')}/protocol/openid-connect/logout`,
+      new URLSearchParams({
+        client_id: this.configService.get('KEYCLOAK_CLIENT_ID') || '',
+        client_secret: this.configService.get('KEYCLOAK_CLIENT_SECRET') || '',
+        refresh_token: refreshToken,
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+    );
+  }
+
+  // ───────── REFRESH ─────────
+  async refreshToken(refreshToken: string) {
+    const response = await axios.post(
+      `${this.configService.get('KEYCLOAK_URL')}/realms/${this.configService.get('KEYCLOAK_REALM')}/protocol/openid-connect/token`,
+      new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: this.configService.get('KEYCLOAK_CLIENT_ID') || '',
+        client_secret: this.configService.get('KEYCLOAK_CLIENT_SECRET') || '',
+        refresh_token: refreshToken,
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+    );
+
+    return response.data;
+  }
+
+  // ───────── CHANGE PASSWORD ─────────
+  async changePassword(userId: string, newPassword: string) {
+    await this.authenticateAdmin();
+
+    await this.kcAdmin.users.resetPassword({
+      id: userId,
+      credential: {
+        type: 'password',
+        value: newPassword,
+        temporary: false,
+      },
+    });
+
+    await this.usersService.markPasswordChanged(userId);
+  }
+
+  async verifyEmailAndBuildRedirect(token: string): Promise<string> {
+    if (!token) {
+      throw new HttpException('Lien de verification manquant', HttpStatus.BAD_REQUEST);
+    }
+
+    let payload: any;
+
     try {
-      await this.authenticateAdmin();
-
-      const users = await this.kcAdmin.users.find({ email, exact: true });
-      if (users.length === 0) {
-        return; // Sécurité : on ne dit pas si l'email existe
-      }
-
-      const userId = users[0].id!;
-
-      await this.kcAdmin.users.executeActionsEmail({
-        id: userId,
-        actions: ['UPDATE_PASSWORD'],
-        lifespan: 3600, // 1 heure
-        // redirectUri: 'http://localhost:4200/reset-password', // optionnel
+      payload = this.jwtService.verify(token, {
+        secret: this.getEmailVerificationSecret(),
       });
-    } catch (error: any) {
-      console.error('Erreur forgot password:', error);
-      // Pas d'erreur renvoyée au client (sécurité)
+    } catch {
+      throw new HttpException('Lien de verification invalide ou expire', HttpStatus.BAD_REQUEST);
     }
-  }
 
-  // ────────────────────────────────────────────────
-  // UPDATE PROFILE – User Story 1.5
-  // ────────────────────────────────────────────────
-  async updateProfile(
-    userId: string,
-    updates: { firstName?: string; lastName?: string; email?: string },
-  ): Promise<void> {
-    try {
-      await this.authenticateAdmin();
+    if (payload?.type !== 'email-verification' || !payload?.sub || !payload?.role) {
+      throw new HttpException('Jeton de verification invalide', HttpStatus.BAD_REQUEST);
+    }
 
-      await this.kcAdmin.users.update(
-        { id: userId },
-        {
-          firstName: updates.firstName,
-          lastName: updates.lastName,
-          email: updates.email,
-          emailVerified: updates.email ? true : undefined,
+    await this.authenticateAdmin();
+
+    await this.kcAdmin.users.update(
+      { id: payload.sub },
+      {
+        emailVerified: true,
+      } as any,
+    );
+
+    await this.userModel.updateOne(
+      { keycloakId: payload.sub },
+      {
+        $set: {
+          emailVerified: true,
         },
-      );
+      },
+    );
 
-      // await this.usersService.updateProfile(userId, updates); // MongoDB
-    } catch (error: any) {
-      console.error('Erreur mise à jour profil:', error);
-      throw new HttpException('Échec mise à jour profil', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+    const frontendUrl =
+      this.configService.get('FRONTEND_URL') || 'http://localhost:4200';
+    const redirectUrl = new URL(frontendUrl);
+    redirectUrl.searchParams.set('role', payload.role);
+    redirectUrl.searchParams.set('verified', '1');
+
+    return redirectUrl.toString();
   }
 
-  // ────────────────────────────────────────────────
-  // GET PROFILE
-  // ────────────────────────────────────────────────
-  async getProfile(userId: string): Promise<any> {
-    try {
-      await this.authenticateAdmin();
-      const user = await this.kcAdmin.users.findOne({ id: userId });
-
-      if (!user) {
-        throw new HttpException('Utilisateur introuvable', HttpStatus.NOT_FOUND);
-      }
-
-      return {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        enabled: user.enabled,
-      };
-    } catch (error: any) {
-      console.error('Erreur récupération profil:', error);
-      throw new HttpException('Échec récupération profil', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
-
-  // ────────────────────────────────────────────────
-  // CRÉATION UTILISATEUR + ENVOI IDENTIFIANTS – User Story 1.1
-  // ────────────────────────────────────────────────
+  // ───────── CREATE USER ─────────
   async createAndSendCredentials(
     email: string,
     username: string,
+    role: 'teacher' | 'student',
     firstName?: string,
     lastName?: string,
-  ): Promise<{ keycloakId: string; message: string }> {
+  ) {
+    await this.authenticateAdmin();
+
+    const tempPassword = Math.random().toString(36).slice(-8);
+    let userId: string | undefined;
+    let reusedExistingUser = false;
+    let shouldSendCredentials = true;
+
     try {
-      await this.authenticateAdmin();
-
-      // Vérification existence
-      const existing = await this.kcAdmin.users.find({ username, email, exact: true });
-      if (existing.length > 0) {
-        throw new HttpException('Utilisateur existe déjà', HttpStatus.CONFLICT);
-      }
-
-      const tempPassword = this.generateTempPassword();
-
       const created = await this.kcAdmin.users.create({
         username,
         email,
         enabled: true,
         emailVerified: false,
-        firstName: firstName || '',
-        lastName: lastName || '',
-        credentials: [{
-          type: 'password',
-          value: tempPassword,
-          temporary: true,
-        }],
+        firstName,
+        lastName,
+        credentials: [
+          {
+            type: 'password',
+            value: tempPassword,
+            temporary: false,
+          },
+        ],
+        requiredActions: [],
       });
 
-      const keycloakId = created.id!;
-
-      // Envoi email (adapte selon ton EmailService)
-      // await this.emailService.sendCredentialsEmail({
-      //   to: email,
-      //   username,
-      //   tempPassword,
-      //   appName: 'EduVia',
-      //   loginUrl: this.configService.get('FRONTEND_URL') + '/login',
-      // });
-
-      // await this.usersService.create({ keycloakId, email, username, ... }); // MongoDB
-
-      return {
-        keycloakId,
-        message: `Compte créé. Identifiants envoyés à ${email}`,
-      };
+      userId = created.id;
     } catch (error: any) {
-      console.error('Erreur création + credentials:', error);
-      if (error instanceof HttpException) throw error;
-      throw new HttpException('Échec création compte', HttpStatus.INTERNAL_SERVER_ERROR);
+      if (error.response?.status !== 409) {
+        throw error;
+      }
+
+      const existingUsers = await this.kcAdmin.users.find({ email, exact: true });
+      const existingUser = existingUsers.find(
+        (user: any) => user.email?.toLowerCase() === email.toLowerCase(),
+      );
+
+      if (!existingUser?.id) {
+        throw new HttpException('User exists in Keycloak but could not be loaded', HttpStatus.CONFLICT);
+      }
+
+      userId = existingUser.id;
+      reusedExistingUser = true;
     }
+
+    const roleRep = await this.kcAdmin.roles.findOneByName({ name: role });
+    if (!roleRep || !roleRep.id || !roleRep.name) {
+      throw new HttpException(
+        `Role '${role}' not found or invalid in Keycloak`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const rolePayload = {
+      ...roleRep,
+      id: roleRep.id,
+      name: roleRep.name,
+    };
+
+    const currentRoles = await this.kcAdmin.users.listRealmRoleMappings({ id: userId });
+    const hasRoleAlready = currentRoles.some((mappedRole: any) => mappedRole.name === role);
+
+    if (!hasRoleAlready) {
+      await this.kcAdmin.users.addRealmRoleMappings({
+        id: userId,
+        roles: [rolePayload],
+      });
+    }
+
+    if (reusedExistingUser) {
+      await this.kcAdmin.users.update(
+        { id: userId },
+        {
+          username,
+          email,
+          enabled: true,
+          emailVerified: false,
+          firstName,
+          lastName,
+          requiredActions: [],
+        } as any,
+      );
+
+      await this.kcAdmin.users.resetPassword({
+        id: userId,
+        credential: {
+          type: 'password',
+          value: tempPassword,
+          temporary: false,
+        },
+      });
+    }
+
+    const savedUser = await this.syncUserToMongo({
+      userId,
+      email,
+      role,
+      username,
+      firstName,
+      lastName,
+    });
+
+    if (!hasRoleAlready) {
+      const verificationLink = this.buildEmailVerificationLink({
+        userId,
+        email,
+        role,
+      });
+
+      await this.emailService.sendIdentificationEmail(
+        email,
+        userId,
+        tempPassword,
+        role,
+        firstName,
+        verificationLink,
+      );
+    } else if (reusedExistingUser && shouldSendCredentials) {
+      const verificationLink = this.buildEmailVerificationLink({
+        userId,
+        email,
+        role,
+      });
+
+      await this.emailService.sendIdentificationEmail(
+        email,
+        userId,
+        tempPassword,
+        role,
+        firstName,
+        verificationLink,
+      );
+    }
+
+    return {
+      message: reusedExistingUser
+        ? 'Existing user updated in Keycloak, password reset, and credentials sent'
+        : 'User created and credentials sent',
+      userId,
+      data: {
+        id: savedUser?._id,
+        keycloakId: userId,
+        email,
+        username,
+        firstName: savedUser?.firstName,
+        lastName: savedUser?.lastName,
+        role,
+      },
+    };
   }
 
-  private generateTempPassword(): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
-    let pw = '';
-    for (let i = 0; i < 12; i++) {
-      pw += chars[Math.floor(Math.random() * chars.length)];
+  async updateManagedUser(
+    identifier: string,
+    params: {
+      email: string;
+      username: string;
+      role: 'teacher' | 'student';
+      firstName?: string;
+      lastName?: string;
+    },
+  ) {
+    const user = await this.findManagedUserOrThrow(identifier);
+    await this.authenticateAdmin();
+
+    await this.kcAdmin.users.update(
+      { id: user.keycloakId },
+      {
+        email: params.email,
+        username: params.username,
+        firstName: params.firstName,
+        lastName: params.lastName,
+        enabled: !user.isBlocked,
+      } as any,
+    );
+
+    await this.ensureRealmRoleAssigned(user.keycloakId, params.role);
+
+    const savedUser = await this.syncUserToMongo({
+      userId: user.keycloakId,
+      email: params.email,
+      role: params.role,
+      username: params.username,
+      firstName: params.firstName,
+      lastName: params.lastName,
+    });
+
+    return {
+      success: true,
+      message: 'User updated successfully',
+      data: {
+        id: savedUser?._id,
+        keycloakId: user.keycloakId,
+        email: savedUser?.email,
+        firstName: savedUser?.firstName,
+        lastName: savedUser?.lastName,
+        role: savedUser?.role,
+      },
+    };
+  }
+
+  async deleteManagedUser(identifier: string) {
+    const user = await this.findManagedUserOrThrow(identifier);
+    await this.authenticateAdmin();
+
+    try {
+      await this.kcAdmin.users.del({ id: user.keycloakId });
+    } catch (error: any) {
+      if (error.response?.status !== 404) {
+        throw error;
+      }
+
+      this.logger.warn(
+        `[DELETE USER] Keycloak user already missing: keycloakId=${user.keycloakId} email=${user.email}`,
+      );
     }
-    return pw;
+
+    await this.userModel.deleteOne({ _id: user._id });
+
+    return {
+      success: true,
+      message: 'User deleted successfully',
+      data: {
+        id: user._id,
+        keycloakId: user.keycloakId,
+        email: user.email,
+      },
+    };
   }
 }

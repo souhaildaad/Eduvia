@@ -17,9 +17,7 @@ import { JwtAuthGuard } from './jwt-auth.guard';
  */
 @Controller('auth')
 export class AuthController {
-  constructor(
-    private authService: AuthService,
-  ) {}
+  constructor(private authService: AuthService) {}
 
   /**
    * Login endpoint
@@ -57,7 +55,10 @@ export class AuthController {
         message: 'Logout successful',
       };
     } catch (error) {
-      throw new HttpException('Logout failed', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        'Logout failed',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
@@ -79,7 +80,10 @@ export class AuthController {
       if (error instanceof HttpException) {
         throw error;
       }
-      throw new HttpException('Token refresh failed', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        'Token refresh failed',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 
