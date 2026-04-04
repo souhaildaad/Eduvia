@@ -9,6 +9,9 @@ export class User extends Document {
   @Prop({ required: true, unique: true })
   email: string;
 
+  @Prop({ required: true, enum: ['teacher', 'student', 'admin'] })
+  role: string;
+
   @Prop({ required: true })
   firstName: string;
 
@@ -17,6 +20,12 @@ export class User extends Document {
 
   @Prop({ default: false })
   passwordChanged: boolean;
+
+  @Prop({ type: Date, default: null })
+  firstLoginAt: Date; // ← AJOUTÉ
+
+  @Prop({ default: false })
+  isBlocked: boolean; // ← AJOUTÉ
 
   @Prop({ type: Date, default: null })
   lastPasswordChange: Date;
@@ -28,16 +37,7 @@ export class User extends Document {
   lastLogin: Date;
 
   @Prop({ type: Object, default: {} })
-  profileData: {
-    phone?: string;
-    address?: string;
-    city?: string;
-    country?: string;
-    avatar?: string;
-  };
-
-  @Prop({ default: true })
-  isActive: boolean;
+  profileData: any; // For additional profile fields like phone, address, etc.
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

@@ -1,36 +1,50 @@
 // src/auth/jwt.strategy.ts
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as jwksRsa from 'jwks-rsa';
 
 @Injectable()
-export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {  // 'jwt' est le nom de la strategy (par défaut)
+export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
+  private readonly logger = new Logger(JwtStrategy.name);
+
   constructor(private configService: ConfigService) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(), // Bearer <token>
-      ignoreExpiration: false,                                  // Vérifie l'expiration
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
       secretOrKeyProvider: jwksRsa.passportJwtSecret({
-        cache: true,                           // Cache les clés (très important)
-        rateLimit: true,                       // Limite les requêtes au JWKS
-        jwksRequestsPerMinute: 5,              // Max 5 req/min
+        cache: true,
+        rateLimit: true,
+        jwksRequestsPerMinute: 5,
         jwksUri: `${configService.getOrThrow('KEYCLOAK_URL')}/realms/${configService.getOrThrow('KEYCLOAK_REALM')}/protocol/openid-connect/certs`,
       }),
-      audience: configService.getOrThrow('KEYCLOAK_CLIENT_ID'),   // Doit matcher client_id
+      // audience: configService.getOrThrow('KEYCLOAK_CLIENT_ID'),   ← SUPPRIME ou COMENTE cette ligne
       issuer: `${configService.getOrThrow('KEYCLOAK_URL')}/realms/${configService.getOrThrow('KEYCLOAK_REALM')}`,
-      algorithms: ['RS256'],                   // Algorithme attendu
+      algorithms: ['RS256'],
     });
   }
 
-  // Cette méthode est appelée quand le token est valide
   async validate(payload: any) {
+    // Gestion service account (pas de sub)
+    const userId =
+      payload.sub ||
+      payload.azp ||
+      payload.clientId ||
+      'service-account-' + (payload.azp || 'unknown');
+    const roles = payload.realm_access?.roles || [];
+
+    this.logger.log(
+      `[JWT] Token validé - ID: ${userId}, Roles: ${roles.join(', ')}, Service Account: ${!payload.sub}`,
+    );
+
     return {
-      userId: payload.sub,                     // Keycloak ID
-      email: payload.email,
-      username: payload.preferred_username,
-      roles: payload.realm_access?.roles || [], // Roles du realm
-      // Ajoute d'autres claims si besoin (scope, etc.)
+      userId,
+      email: payload.email || null,
+      username: payload.preferred_username || null,
+      roles,
+      isServiceAccount: !payload.sub,
+      scope: payload.scope,
     };
   }
 }

@@ -1,202 +1,237 @@
 import {
   Body,
   Controller,
+  Delete,
   Post,
   Get,
   Patch,
+  Param,
+  Query,
   Request,
+  Res,
   UseGuards,
   UsePipes,
   ValidationPipe,
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
+
 import { AuthService } from './auth.service';
+import { UsersService } from '../users/users.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
 import { Roles } from './roles.decorator';
 
-// Import des validateurs (installe npm install class-validator class-transformer)
 import { IsEmail, IsString, MinLength, IsOptional } from 'class-validator';
 
-// ────────────────────────────────────────────────
-// DTOs (Data Transfer Objects) pour validation
-// ────────────────────────────────────────────────
+// ───────────────── DTOs ─────────────────
 
 class LoginDto {
   @IsEmail({}, { message: 'Email invalide' })
   email: string;
 
   @IsString()
-  @MinLength(6, { message: 'Le mot de passe doit contenir au moins 6 caractères' })
+  @MinLength(6)
   password: string;
 }
 
 class ChangePasswordDto {
   @IsString()
-  @MinLength(8, { message: 'Le nouveau mot de passe doit contenir au moins 8 caractères' })
+  @MinLength(8)
   newPassword: string;
 }
 
 class UpdateProfileDto {
-  @IsString()
   @IsOptional()
   firstName?: string;
 
-  @IsString()
   @IsOptional()
   lastName?: string;
 
-  @IsEmail()
   @IsOptional()
   email?: string;
 }
 
 class CreateUserDto {
-  @IsEmail({}, { message: 'Email invalide' })
+  @IsEmail()
   email: string;
 
   @IsString()
-  @MinLength(3, { message: 'Le username doit contenir au moins 3 caractères' })
   username: string;
 
-  @IsString()
   @IsOptional()
   firstName?: string;
 
-  @IsString()
   @IsOptional()
   lastName?: string;
+
+  @IsString()
+  role: 'teacher' | 'student';
 }
 
-@Controller('auth')
-@UsePipes(
-  new ValidationPipe({
-    whitelist: true,           // supprime les champs non définis dans le DTO
-    forbidNonWhitelisted: true, // rejette la requête si champs inconnus
-    transform: true,           // transforme automatiquement les types
-  }),
-)
-export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+class UpdateUserDto {
+  @IsEmail()
+  email: string;
 
-  // ────────────────────────────────────────────────
-  // Connexion (User Story 1.2) – Public
-  // ────────────────────────────────────────────────
+  @IsOptional()
+  @IsString()
+  username?: string;
+
+  @IsOptional()
+  firstName?: string;
+
+  @IsOptional()
+  lastName?: string;
+
+  @IsString()
+  role: 'teacher' | 'student';
+}
+
+// ───────────────── CONTROLLER ─────────────────
+
+@Controller('auth')
+@UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+export class AuthController {
+  constructor(
+    private readonly authService: AuthService,
+    private readonly usersService: UsersService,
+  ) {}
+
+  // ───────────────── LOGIN ─────────────────
   @Post('login')
   async login(@Body() loginDto: LoginDto) {
     try {
-      const result = await this.authService.login(loginDto.email, loginDto.password);
+      const result = await this.authService.login(
+        loginDto.email,
+        loginDto.password,
+      );
+
+      const role = result?.user?.roles?.[0] || null;
+
       return {
         success: true,
-        data: result,
-        message: 'Connexion réussie',
+        data: { ...result, role },
       };
-    } catch (error) {
-      if (error instanceof HttpException) throw error;
-      throw new HttpException('Échec de la connexion', HttpStatus.UNAUTHORIZED);
+    } catch (error: any) {
+      throw new HttpException(
+        error?.response || error?.message || 'Echec de la connexion',
+        error?.status || HttpStatus.UNAUTHORIZED,
+      );
     }
   }
 
-  // ────────────────────────────────────────────────
-  // Déconnexion (User Story 1.6) – Public
-  // ────────────────────────────────────────────────
+  // ───────────────── LOGOUT ─────────────────
   @Post('logout')
   async logout(@Body() body: { refresh_token: string }) {
-    try {
-      await this.authService.logout(body.refresh_token);
-      return {
-        success: true,
-        message: 'Déconnexion réussie',
-      };
-    } catch (error) {
-      throw new HttpException('Échec de la déconnexion', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+    await this.authService.logout(body.refresh_token);
+    return { success: true };
   }
 
-  // ────────────────────────────────────────────────
-  // Rafraîchissement token – Public
-  // ────────────────────────────────────────────────
-  @Post('refresh')
-  async refresh(@Body() body: { refresh_token: string }) {
-    try {
-      const result = await this.authService.refreshToken(body.refresh_token);
-      return {
-        success: true,
-        data: result,
-        message: 'Token rafraîchi avec succès',
-      };
-    } catch (error) {
-      throw new HttpException('Échec du rafraîchissement', HttpStatus.UNAUTHORIZED);
-    }
-  }
-
-  // ────────────────────────────────────────────────
-  // Vérification token – Protégé
-  // ────────────────────────────────────────────────
+  // ───────────────── VERIFY ─────────────────
   @UseGuards(JwtAuthGuard)
   @Get('verify')
-  async verifyToken(@Request() req) {
+  verify(@Request() req) {
+    return { success: true, user: req.user };
+  }
+
+  @Get('verify-email')
+  async verifyEmail(
+    @Query('token') token: string,
+    @Res() res: any,
+  ) {
+    const redirectUrl = await this.authService.verifyEmailAndBuildRedirect(token);
+    return res.redirect(redirectUrl);
+  }
+
+  // ───────────────── PASSWORD STATUS ─────────────────
+  @UseGuards(JwtAuthGuard)
+  @Get('password-status')
+  async passwordStatus(@Request() req) {
+    const roles = req.user?.roles || [];
+
+    // ADMIN → jamais de changement de mot de passe
+    if (roles.includes('admin')) {
+      return {
+        needsPasswordChange: false,
+        blocked: false,
+      };
+    }
+
+    const requiresPasswordChange = roles.some((role) =>
+      ['teacher', 'student'].includes(role)
+    );
+
+    if (!requiresPasswordChange) {
+      return { needsPasswordChange: false, blocked: false };
+    }
+
+    const passwordChanged = await this.usersService.isPasswordChanged(req.user.userId);
+
     return {
-      success: true,
-      data: req.user,
-      message: 'Token valide',
+      needsPasswordChange: !passwordChanged,
+      blocked: false,
     };
   }
 
-  // ────────────────────────────────────────────────
-  // Changement mot de passe (User Story 1.3) – Protégé
-  // ────────────────────────────────────────────────
+  // ───────────────── CHANGE PASSWORD ─────────────────
   @UseGuards(JwtAuthGuard)
   @Post('change-password')
   async changePassword(@Request() req, @Body() dto: ChangePasswordDto) {
-    const userId = req.user.sub; // sub = ID Keycloak du token
-    await this.authService.changePassword(userId, dto.newPassword);
-    return {
-      success: true,
-      message: 'Mot de passe modifié avec succès',
-    };
+    await this.authService.changePassword(req.user.userId, dto.newPassword);
+
+    await this.usersService.markPasswordChanged(req.user.userId);
+
+    return { success: true };
   }
 
-  // ────────────────────────────────────────────────
-  // Récupération mot de passe (User Story 1.4) – Public
-  // ────────────────────────────────────────────────
-  @Post('forgot-password')
-  async forgotPassword(@Body() body: { email: string }) {
-    await this.authService.forgotPassword(body.email);
-    return {
-      success: true,
-      message: 'Email de réinitialisation envoyé (si l\'email existe)',
-    };
+  // ───────────────── LIST USERS (ADMIN) ─────────────────
+  @Get('users')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async getUsers() {
+    const users = await this.usersService.getAllUsers();
+    return { success: true, data: users };
   }
 
-  // ────────────────────────────────────────────────
-  // Mise à jour profil (User Story 1.5) – Protégé
-  // ────────────────────────────────────────────────
-  @UseGuards(JwtAuthGuard)
-  @Patch('profile')
-  async updateProfile(@Request() req, @Body() dto: UpdateProfileDto) {
-    const userId = req.user.sub;
-    const updated = await this.authService.updateProfile(userId, dto);
-    return {
-      success: true,
-      data: updated,
-      message: 'Profil mis à jour',
-    };
-  }
-
-  // ────────────────────────────────────────────────
-  // Création utilisateur + envoi identifiants (User Story 1.1) – Admin only
-  // ────────────────────────────────────────────────
+  // ───────────────── CREATE USER (ADMIN) ─────────────────
   @Post('admin/create-user')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')  // ← Seul les utilisateurs avec rôle "admin" passent
-  async createUserAdmin(@Body() dto: CreateUserDto) {
+  @Roles('admin')
+  async createUser(@Body() dto: CreateUserDto) {
     return this.authService.createAndSendCredentials(
       dto.email,
       dto.username,
+      dto.role,
       dto.firstName,
       dto.lastName,
     );
+  }
+
+  // ───────────────── CREATE USER V1 (compatibilité) ─────────────────
+  @Post('users')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async createUserV1(@Body() dto: CreateUserDto) {
+    return this.createUser(dto);
+  }
+
+  @Patch('users/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async updateUser(@Param('id') id: string, @Body() dto: UpdateUserDto) {
+    return this.authService.updateManagedUser(id, {
+      email: dto.email,
+      username: dto.username || dto.email,
+      role: dto.role,
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+    });
+  }
+
+  @Delete('users/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  async deleteUser(@Param('id') id: string) {
+    return this.authService.deleteManagedUser(id);
   }
 }

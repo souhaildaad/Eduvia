@@ -6,40 +6,35 @@ import { JwtModule } from '@nestjs/jwt'; // même si tu ne signes pas, utile pou
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
-import { RolesGuard } from './roles.guard';          // ← Import du guard rôles
+import { RolesGuard } from './roles.guard'; // ← Import du guard rôles
 import { KeycloakService } from './keycloak.service'; // suppose que tu as ce service
+import { EmailModule } from 'src/email/email.module';
+import { UsersModule } from 'src/users/users.module';
+import { MongooseModule } from '@nestjs/mongoose';
+import { User, UserSchema } from '../users/user.schema';
 
 // import { UsersModule } from '../users/users.module'; // Décommente quand MongoDB prêt
 
 @Module({
   imports: [
-    // Charge .env globalement (déjà dans AppModule ? Si oui, tu peux retirer ici)
     ConfigModule,
-
-    // Passport avec stratégie JWT par défaut
     PassportModule.register({ defaultStrategy: 'jwt' }),
-
-    // JwtModule : utile pour JwtService.decode() et JwtService.verify()
-    // Pas besoin de secret/signOptions car on ne signe PAS ici (Keycloak signe)
     JwtModule.register({}),
-
-    // Décommente quand MongoDB et UsersModule sont prêts
-    // UsersModule,
+    EmailModule,
+    UsersModule,
+    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
   ],
 
   controllers: [AuthController],
 
   providers: [
     AuthService,
-    KeycloakService,     // Pour appels admin Keycloak
-    JwtStrategy,         // Stratégie de validation JWT + rôles
-    RolesGuard,          // Guard pour vérifier les rôles (@Roles('admin'))
+    KeycloakService, // Pour appels admin Keycloak
+    JwtStrategy, // Stratégie de validation JWT + rôles
+    RolesGuard, // Guard pour vérifier les rôles (@Roles('admin'))
   ],
 
   // Exporte les services pour les utiliser dans d'autres modules (ex: UsersModule)
-  exports: [
-    AuthService,
-    KeycloakService,
-  ],
+  exports: [AuthService, KeycloakService],
 })
 export class AuthModule {}

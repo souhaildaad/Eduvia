@@ -17,9 +17,13 @@ export class KeycloakService {
     this.keycloakUrl = this.configService.get<string>('KEYCLOAK_URL')!;
     this.realm = this.configService.get<string>('KEYCLOAK_REALM')!;
     this.clientId = this.configService.get<string>('KEYCLOAK_CLIENT_ID')!;
-    this.clientSecret = this.configService.get<string>('KEYCLOAK_CLIENT_SECRET')!;
+    this.clientSecret = this.configService.get<string>(
+      'KEYCLOAK_CLIENT_SECRET',
+    )!;
     this.adminUser = this.configService.get<string>('KEYCLOAK_ADMIN_USER')!;
-    this.adminPassword = this.configService.get<string>('KEYCLOAK_ADMIN_PASSWORD')!;
+    this.adminPassword = this.configService.get<string>(
+      'KEYCLOAK_ADMIN_PASSWORD',
+    )!;
   }
 
   /**
@@ -62,7 +66,11 @@ export class KeycloakService {
   /**
    * Create a new user in Keycloak
    */
-  async createUser(email: string, firstName: string, lastName: string): Promise<{ userId: string; temporaryPassword: string }> {
+  async createUser(
+    email: string,
+    firstName: string,
+    lastName: string,
+  ): Promise<{ userId: string; temporaryPassword: string }> {
     try {
       const token = await this.getAdminAccessToken();
       const temporaryPassword = this.generateTemporaryPassword();
@@ -95,7 +103,7 @@ export class KeycloakService {
         {
           type: 'PASSWORD',
           value: temporaryPassword,
-          temporary: true,
+          temporary: false,
         },
         {
           headers: {
@@ -120,7 +128,11 @@ export class KeycloakService {
   /**
    * Change user password
    */
-  async changePassword(userId: string, newPassword: string, currentPassword?: string): Promise<boolean> {
+  async changePassword(
+    userId: string,
+    newPassword: string,
+    currentPassword?: string,
+  ): Promise<boolean> {
     try {
       const token = await this.getAdminAccessToken();
 
@@ -161,7 +173,7 @@ export class KeycloakService {
         {
           type: 'PASSWORD',
           value: temporaryPassword,
-          temporary: true,
+          temporary: false,
         },
         {
           headers: {
@@ -227,17 +239,17 @@ export class KeycloakService {
 
       return response.data;
     } catch (error) {
-      throw new HttpException(
-        'Failed to get user',
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException('Failed to get user', HttpStatus.NOT_FOUND);
     }
   }
 
   /**
    * Update user profile
    */
-  async updateUserProfile(userId: string, updateData: { firstName?: string; lastName?: string; email?: string }): Promise<boolean> {
+  async updateUserProfile(
+    userId: string,
+    updateData: { firstName?: string; lastName?: string; email?: string },
+  ): Promise<boolean> {
     try {
       const token = await this.getAdminAccessToken();
 
@@ -260,6 +272,30 @@ export class KeycloakService {
     } catch (error) {
       throw new HttpException(
         'Failed to update user profile',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  async updateUserEnabled(userId: string, enabled: boolean): Promise<boolean> {
+    try {
+      const token = await this.getAdminAccessToken();
+
+      await axios.put(
+        `${this.keycloakUrl}/admin/realms/${this.realm}/users/${userId}`,
+        { enabled },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      return true;
+    } catch (error) {
+      throw new HttpException(
+        'Failed to update user enabled status',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
@@ -298,7 +334,8 @@ export class KeycloakService {
    */
   private generateTemporaryPassword(): string {
     const length = 12;
-    const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+    const charset =
+      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
     let password = '';
     for (let i = 0; i < length; i++) {
       password += charset.charAt(Math.floor(Math.random() * charset.length));
