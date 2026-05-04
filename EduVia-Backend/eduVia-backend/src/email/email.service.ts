@@ -8,20 +8,27 @@ import { resolve } from 'path';
 export class EmailService {
   private transporter: nodemailer.Transporter;
   private readonly logoCid = 'eduvia-logo';
+  private readonly logoMarkupStyle =
+    'width:76px;height:76px;object-fit:contain;background:#ffffff;border-radius:20px;padding:8px;display:block;';
 
   private resolveLogoAttachment() {
     const configuredLogoPath = this.configService.get('EMAIL_LOGO_PATH');
     const candidatePaths = [
       configuredLogoPath,
+      resolve(process.cwd(), 'public', 'logo.png'),
+      resolve(process.cwd(), '..', 'EduVia-Frontend', 'public', 'logo.png'),
+      resolve(process.cwd(), '..', '..', 'EduVia-Frontend', 'public', 'logo.png'),
       resolve(
         process.cwd(),
         '..',
         '..',
-        'EduVia-Frontend-project',
+        '..',
         'EduVia-Frontend',
         'public',
         'logo.png',
       ),
+      resolve(__dirname, '..', '..', '..', 'EduVia-Frontend', 'public', 'logo.png'),
+      resolve(__dirname, '..', '..', '..', '..', 'EduVia-Frontend', 'public', 'logo.png'),
     ].filter((value): value is string => Boolean(value));
 
     const logoPath = candidatePaths.find((candidatePath) =>
@@ -67,17 +74,25 @@ export class EmailService {
     console.log(`  - User: ${this.configService.getOrThrow('SMTP_USER')}`);
     console.log(`  - From: ${this.configService.getOrThrow('SMTP_FROM_EMAIL')}`);
   }
-
   async sendPasswordResetEmail(params: {
     to: string;
     resetLink: string;
     appName: string;
     expirationMinutes?: number;
+    firstName?: string;
+    role?: 'teacher' | 'student';
   }): Promise<void> {
-    const { to, resetLink, appName, expirationMinutes = 60 } = params;
+    const {
+      to,
+      resetLink,
+      appName,
+      expirationMinutes = 60,
+      firstName,
+      role,
+    } = params;
 
-    console.log(`[EMAIL] Préparation email de réinitialisation pour: ${to}`);
-    console.log(`[EMAIL] Vérification du champ TO: ${to}`);
+    console.log(`[EMAIL] Preparation email de reinitialisation pour: ${to}`);
+    console.log(`[EMAIL] Verification du champ TO: ${to}`);
 
     if (!to || typeof to !== 'string') {
       console.error(`[EMAIL ERROR] Le champ 'to' est invalide: ${to}`);
@@ -86,33 +101,87 @@ export class EmailService {
 
     const fromEmail = this.configService.getOrThrow('SMTP_FROM_EMAIL');
     const fromName = this.configService.get('SMTP_FROM_NAME') || appName;
+    const greetingName = firstName?.trim() || to;
+    const roleLabel = role === 'teacher' ? 'enseignant' : 'etudiant';
+    const logoAssets = this.getLogoEmailAssets(appName);
 
     const mailOptions = {
       from: `${fromName} <${fromEmail}>`,
       to: to.toLowerCase().trim(),
-      subject: `Réinitialisation de mot de passe - ${appName}`,
+      subject: `Reinitialisation de mot de passe - ${appName}`,
+      attachments: logoAssets.attachment ? [logoAssets.attachment] : [],
       text: `
-Bonjour,
+${appName}
 
-Vous avez demandé une réinitialisation de mot de passe pour votre compte ${appName}.
+Reinitialisation de votre mot de passe
 
-Cliquez sur le lien ci-dessous pour réinitialiser votre mot de passe :
+Bonjour ${greetingName},
+
+Vous avez demande une reinitialisation de mot de passe pour votre compte ${appName}.
+
+Cliquez sur le lien ci-dessous pour definir un nouveau mot de passe :
 ${resetLink}
 
 Ce lien expire dans ${expirationMinutes} minutes.
 
-Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.
+Si vous n'etes pas a l'origine de cette demande, ignorez cet email.
+
+Apres reinitialisation, vous pourrez acceder a votre espace ${roleLabel} ${appName}.
 
 Cordialement,
-L'équipe ${appName}
+L'equipe ${appName}
       `.trim(),
       html: `
-        <h2>Réinitialisation de mot de passe</h2>
-        <p>Vous avez demandé une réinitialisation de mot de passe pour votre compte ${appName}.</p>
-        <p><a href="${resetLink}" style="background:#4CAF50;color:white;padding:12px 24px;text-decoration:none;border-radius:5px;display:inline-block;font-weight:bold;">Réinitialiser mon mot de passe</a></p>
-        <p style="color:#999;font-size:12px;">Ce lien expire dans ${expirationMinutes} minutes.</p>
-        <p>Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
-        <p>Cordialement,<br>L'équipe ${appName}</p>
+        <div style="margin:0;padding:24px;background:#f4f6fb;font-family:Arial,Helvetica,sans-serif;color:#091224;">
+          <div style="max-width:680px;margin:0 auto;background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 20px 45px rgba(9,18,36,0.08);border:1px solid #dde3ef;">
+            <div style="padding:36px 40px;background:linear-gradient(135deg,#8b1e3f 0%,#c62828 52%,#ef5350 100%);color:#ffffff;">
+              <div style="display:flex;align-items:flex-start;">
+                ${logoAssets.markup}
+                <div style="padding-top:6px;padding-left:28px;">
+                  <div style="font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.9;">${appName}</div>
+                  <h1 style="margin:10px 0 0;font-size:32px;line-height:1.15;">Reinitialisation de votre mot de passe</h1>
+                </div>
+              </div>
+              <p style="margin:28px 0 0;font-size:15px;line-height:1.7;color:rgba(255,255,255,0.92);">
+                Une demande de reinitialisation de mot de passe a ete effectuee pour votre compte ${appName}.
+              </p>
+            </div>
+
+            <div style="padding:32px;">
+              <p style="margin:0 0 18px;font-size:16px;line-height:1.8;">Bonjour ${greetingName},</p>
+              <p style="margin:0 0 24px;font-size:15px;line-height:1.8;color:#31405d;">
+                Vous avez demande a reinitialiser votre mot de passe. Cliquez sur le bouton ci-dessous pour definir un nouveau mot de passe et securiser votre compte.
+              </p>
+
+              <div style="text-align:center;margin:0 0 26px;">
+                <a href="${resetLink}" style="display:inline-block;padding:14px 28px;border-radius:999px;background:#c62828;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;box-shadow:0 12px 24px rgba(198,40,40,0.22);">
+                  Reinitialiser mon mot de passe
+                </a>
+              </div>
+
+              <div style="margin-bottom:22px;padding:18px 20px;border-radius:18px;background:#fff4f4;border:1px solid #ffd6d6;">
+                <div style="font-size:15px;font-weight:700;color:#991b1b;margin-bottom:10px;">Important</div>
+                <ul style="margin:0;padding-left:20px;color:#7a3030;font-size:14px;line-height:1.8;">
+                  <li>Ce lien est valable pendant ${expirationMinutes} minutes.</li>
+                  <li>Si vous n'etes pas a l'origine de cette demande, ignorez cet email.</li>
+                  <li>Ne partagez jamais vos identifiants.</li>
+                </ul>
+              </div>
+
+              <div style="padding:22px;border-radius:18px;background:#ffffff;border:1px solid #dde3ef;">
+                <div style="font-size:16px;font-weight:700;margin-bottom:10px;">Acces securise</div>
+                <p style="margin:0;font-size:14px;line-height:1.8;color:#31405d;">
+                  Apres reinitialisation, vous pourrez acceder a votre espace ${roleLabel} ${appName} avec votre nouveau mot de passe.
+                </p>
+              </div>
+
+              <p style="margin:22px 0 0;font-size:14px;line-height:1.8;color:#31405d;">
+                Merci d'utiliser <strong>${appName}</strong><br />
+                Apprendre, collaborer et progresser dans un espace securise.
+              </p>
+            </div>
+          </div>
+        </div>
       `,
     };
 
@@ -124,19 +193,30 @@ L'équipe ${appName}
       console.log(`[EMAIL] To: ${mailOptions.to}`);
       console.log(`[EMAIL] Subject: ${mailOptions.subject}`);
       const info = await this.transporter.sendMail(mailOptions);
-      console.log(`[EMAIL] ✅ Réinitialisation envoyée AVEC SUCCÈS`);
-      console.log(`[EMAIL] Destinataire confirmé: ${to}`);
+      console.log(`[EMAIL] Reinitialisation envoyee AVEC SUCCES`);
+      console.log(`[EMAIL] Destinataire confirme: ${to}`);
       console.log(`[EMAIL] MessageID: ${info.messageId}`);
       console.log(`[EMAIL] Response: ${info.response}`);
     } catch (error: any) {
-      console.error(`[EMAIL ERROR] ❌ Erreur lors de l'envoi à ${to}:`);
+      console.error(`[EMAIL ERROR] Erreur lors de l'envoi a ${to}:`);
       console.error(`[EMAIL ERROR] Message: ${error.message}`);
       console.error(`[EMAIL ERROR] Code: ${error.code}`);
-      console.error(`[EMAIL ERROR] Détails complets:`, error);
+      console.error(`[EMAIL ERROR] Details complets:`, error);
       throw error;
     }
   }
 
+  private getLogoEmailAssets(appName: string): {
+    attachment: { filename: string; path: string; cid: string } | null;
+    markup: string;
+  } {
+    const attachment = this.resolveLogoAttachment();
+    const markup = attachment
+      ? `<img src="cid:${this.logoCid}" alt="${appName}" style="${this.logoMarkupStyle}" />`
+      : `<div style="width:76px;height:76px;border-radius:20px;background:#ffffff;color:#c62828;font-size:28px;font-weight:800;display:flex;align-items:center;justify-content:center;">E</div>`;
+
+    return { attachment, markup };
+  }
   async sendIdentificationEmail(
     email: string,
     userId: string,
@@ -152,10 +232,7 @@ L'équipe ${appName}
     const primaryUrl = verificationUrl || loginUrl;
     const greetingName = firstName?.trim() || email;
     const roleLabel = role === 'teacher' ? 'enseignant' : 'etudiant';
-    const logoAttachment = this.resolveLogoAttachment();
-    const logoMarkup = logoAttachment
-      ? `<img src="cid:${this.logoCid}" alt="${appName}" style="width:76px;height:76px;object-fit:contain;background:#ffffff;border-radius:20px;padding:8px;display:block;" />`
-      : `<div style="width:76px;height:76px;border-radius:20px;background:#ffffff;color:#c62828;font-size:28px;font-weight:800;display:flex;align-items:center;justify-content:center;">E</div>`;
+    const logoAssets = this.getLogoEmailAssets(appName);
 
     console.log(`[EMAIL] Préparation email d'identification pour: ${email}`);
     console.log(`[EMAIL] Vérification du champ TO: ${email}`);
@@ -172,7 +249,7 @@ L'équipe ${appName}
       from: `${fromName} <${fromEmail}>`,
       to: email.toLowerCase().trim(),
       subject: `Bienvenue sur ${appName} - Vos identifiants`,
-      attachments: logoAttachment ? [logoAttachment] : [],
+      attachments: logoAssets.attachment ? [logoAssets.attachment] : [],
       text: `
 Bonjour ${greetingName},
 
@@ -213,7 +290,7 @@ L'equipe ${appName}
           <div style="max-width:680px;margin:0 auto;background:#ffffff;border-radius:24px;overflow:hidden;box-shadow:0 20px 45px rgba(9,18,36,0.08);border:1px solid #dde3ef;">
             <div style="padding:36px 40px;background:linear-gradient(135deg,#8b1e3f 0%,#c62828 52%,#ef5350 100%);color:#ffffff;">
               <div style="display:flex;align-items:flex-start;">
-                ${logoMarkup}
+                ${logoAssets.markup}
                 <div style="padding-top:6px;padding-left:28px;">
                   <div style="font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.9;">EduVia</div>
                   <h1 style="margin:10px 0 0;font-size:32px;line-height:1.15;">Bienvenue sur votre espace ${roleLabel}</h1>
@@ -320,5 +397,180 @@ L'equipe ${appName}
     `,
     };
     await this.transporter.sendMail(mailOptions);
+  }
+
+  async sendExamReminderEmail(params: {
+    to: string;
+    studentName?: string;
+    title: string;
+    message: string;
+  }): Promise<void> {
+    const appName = 'EduVia';
+    const to = String(params.to || '').trim().toLowerCase();
+    if (!to) {
+      throw new Error('Email destinataire invalide');
+    }
+
+    const fromEmail = this.configService.getOrThrow('SMTP_FROM_EMAIL');
+    const fromName = this.configService.get('SMTP_FROM_NAME') || appName;
+    const greetingName = params.studentName?.trim() || to;
+    const logoAssets = this.getLogoEmailAssets(appName);
+    const escapedMessage = String(params.message || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\n/g, '<br />');
+
+    await this.transporter.sendMail({
+      from: `${fromName} <${fromEmail}>`,
+      to,
+      subject: params.title || 'Rappel de votre enseignant',
+      attachments: logoAssets.attachment ? [logoAssets.attachment] : [],
+      text: `Bonjour ${greetingName},\n\n${params.message}\n\nL'equipe ${appName}`,
+      html: `
+        <div style="margin:0;padding:24px;background:#f4f6fb;font-family:Arial,Helvetica,sans-serif;color:#091224;">
+          <div style="max-width:680px;margin:0 auto;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid #dde3ef;">
+            <div style="padding:28px 32px;background:linear-gradient(135deg,#8b1e3f 0%,#c62828 55%,#ef5350 100%);color:#ffffff;">
+              ${logoAssets.markup}
+              <h1 style="margin:18px 0 0;font-size:28px;line-height:1.2;">${params.title}</h1>
+            </div>
+            <div style="padding:28px 32px;">
+              <p style="margin:0 0 18px;font-size:16px;">Bonjour ${greetingName},</p>
+              <div style="padding:18px 20px;border-radius:18px;background:#f8fafc;border:1px solid #dde3ef;line-height:1.7;">
+                ${escapedMessage}
+              </div>
+              <p style="margin:22px 0 0;color:#31405d;">Bon courage dans vos revisions.<br />L'equipe ${appName}</p>
+            </div>
+          </div>
+        </div>
+      `,
+    });
+  }
+
+  async sendMeetSessionEmail(params: {
+    to: string;
+    studentName?: string;
+    title: string;
+    message: string;
+    joinUrl: string;
+  }): Promise<void> {
+    const appName = 'EduVia';
+    const to = String(params.to || '').trim().toLowerCase();
+    if (!to) {
+      throw new Error('Email destinataire invalide');
+    }
+
+    const fromEmail = this.configService.getOrThrow('SMTP_FROM_EMAIL');
+    const fromName = this.configService.get('SMTP_FROM_NAME') || appName;
+    const greetingName = params.studentName?.trim() || to;
+    const logoAssets = this.getLogoEmailAssets(appName);
+    const escapedMessage = String(params.message || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\n/g, '<br />');
+
+    await this.transporter.sendMail({
+      from: `${fromName} <${fromEmail}>`,
+      to,
+      subject: params.title || 'Nouvelle session Meet EduVia',
+      attachments: logoAssets.attachment ? [logoAssets.attachment] : [],
+      text: `Bonjour ${greetingName},
+
+${params.message}
+
+Ouvrir la session : ${params.joinUrl}
+
+L'equipe ${appName}`,
+      html: `
+        <div style="margin:0;padding:24px;background:#f4f6fb;font-family:Arial,Helvetica,sans-serif;color:#091224;">
+          <div style="max-width:680px;margin:0 auto;background:#ffffff;border-radius:24px;overflow:hidden;border:1px solid #dde3ef;">
+            <div style="padding:28px 32px;background:linear-gradient(135deg,#0f766e 0%,#2563eb 100%);color:#ffffff;">
+              ${logoAssets.markup}
+              <h1 style="margin:18px 0 0;font-size:28px;line-height:1.2;">${params.title}</h1>
+            </div>
+            <div style="padding:28px 32px;">
+              <p style="margin:0 0 18px;font-size:16px;">Bonjour ${greetingName},</p>
+              <div style="padding:18px 20px;border-radius:18px;background:#f8fafc;border:1px solid #dde3ef;line-height:1.7;">
+                ${escapedMessage}
+              </div>
+              <div style="text-align:center;margin:26px 0 0;">
+                <a href="${params.joinUrl}" style="display:inline-block;padding:14px 28px;border-radius:999px;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:700;">
+                  Ouvrir la session
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      `,
+    });
+  }
+
+  async sendPlannerReminderEmail(params: {
+    to: string;
+    studentName?: string;
+    eventTitle: string;
+    eventDateLabel: string;
+    eventTime: string;
+    message: string;
+  }): Promise<void> {
+    const appName = 'EduVia';
+    const to = String(params.to || '').trim().toLowerCase();
+    if (!to) {
+      throw new Error('Email destinataire invalide');
+    }
+
+    const fromEmail = this.configService.getOrThrow('SMTP_FROM_EMAIL');
+    const fromName = this.configService.get('SMTP_FROM_NAME') || appName;
+    const greetingName = params.studentName?.trim() || to;
+    const logoAssets = this.getLogoEmailAssets(appName);
+    const title = `Rappel EduVia - ${params.eventTitle}`;
+    const escapedMessage = String(params.message || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\n/g, '<br />');
+
+    await this.transporter.sendMail({
+      from: `${fromName} <${fromEmail}>`,
+      to,
+      subject: title,
+      attachments: logoAssets.attachment ? [logoAssets.attachment] : [],
+      text: `Bonjour ${greetingName},
+
+${params.message}
+
+Evenement : ${params.eventTitle}
+Date : ${params.eventDateLabel}
+Heure : ${params.eventTime}
+
+Ce rappel est programme parce que vous avez clique sur l'alerte dans votre calendrier.
+
+L'equipe ${appName}`,
+      html: `
+        <div style="margin:0;padding:24px;background:#f4f6fb;font-family:Arial,Helvetica,sans-serif;color:#091224;">
+          <div style="max-width:680px;margin:0 auto;background:#101214;border-radius:24px;overflow:hidden;border:1px solid #2b3038;box-shadow:0 22px 46px rgba(9,18,36,0.16);">
+            <div style="padding:34px 36px;background:linear-gradient(135deg,#9f1239 0%,#dc2626 56%,#f43f5e 100%);color:#ffffff;">
+              ${logoAssets.markup}
+              <h1 style="margin:22px 0 0;font-size:32px;line-height:1.15;color:#ffffff;">${title}</h1>
+            </div>
+            <div style="padding:34px 36px;background:#101214;color:#e5e7eb;">
+              <p style="margin:0 0 18px;font-size:16px;line-height:1.7;color:#dbe4f0;">Bonjour <strong>${greetingName}</strong>,</p>
+              <div style="padding:22px 24px;border-radius:18px;background:#1f2329;border:1px solid #343b46;line-height:1.8;color:#f8fafc;font-size:15px;">
+                ${escapedMessage}
+              </div>
+              <div style="margin-top:22px;padding:18px 20px;border-radius:16px;background:#171a1f;border:1px solid #303640;color:#dbe4f0;">
+                <p style="margin:0 0 8px;"><strong>Evenement :</strong> ${params.eventTitle}</p>
+                <p style="margin:0 0 8px;"><strong>Date :</strong> ${params.eventDateLabel}</p>
+                <p style="margin:0;"><strong>Heure :</strong> ${params.eventTime}</p>
+              </div>
+              <p style="margin:22px 0 0;color:#9ca3af;font-size:14px;line-height:1.7;">
+                Ce rappel est programme uniquement parce que vous avez clique sur l'alerte dans votre calendrier. EduVia vous rappelle de vous preparer 24h avant cet evenement.
+              </p>
+            </div>
+          </div>
+        </div>
+      `,
+    });
   }
 }

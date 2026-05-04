@@ -1,9 +1,10 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 
 @Injectable()
 export class KeycloakService {
+  private readonly logger = new Logger(KeycloakService.name);
   private keycloakUrl: string;
   private realm: string;
   private clientId: string;
@@ -20,10 +21,13 @@ export class KeycloakService {
     this.clientSecret = this.configService.get<string>(
       'KEYCLOAK_CLIENT_SECRET',
     )!;
-    this.adminUser = this.configService.get<string>('KEYCLOAK_ADMIN_USER')!;
+    this.adminUser =
+      this.configService.get<string>('KEYCLOAK_ADMIN_USERNAME') ||
+      this.configService.get<string>('KEYCLOAK_ADMIN_USER') ||
+      '';
     this.adminPassword = this.configService.get<string>(
       'KEYCLOAK_ADMIN_PASSWORD',
-    )!;
+    ) || '';
   }
 
   /**
@@ -55,7 +59,10 @@ export class KeycloakService {
       this.tokenExpiry = Date.now() + response.data.expires_in * 1000 - 60000; // Refresh 1 min before expiry
 
       return this.accessToken;
-    } catch (error) {
+    } catch (error: any) {
+      this.logger.error(
+        `[KEYCLOAK ADMIN TOKEN] status=${error?.response?.status ?? 'unknown'} payload=${JSON.stringify(error?.response?.data ?? error?.message)}`,
+      );
       throw new HttpException(
         'Failed to get Keycloak admin access token',
         HttpStatus.INTERNAL_SERVER_ERROR,
@@ -293,7 +300,10 @@ export class KeycloakService {
       );
 
       return true;
-    } catch (error) {
+    } catch (error: any) {
+      this.logger.error(
+        `[KEYCLOAK USER ENABLED] userId=${userId} enabled=${enabled} status=${error?.response?.status ?? 'unknown'} payload=${JSON.stringify(error?.response?.data ?? error?.message)}`,
+      );
       throw new HttpException(
         'Failed to update user enabled status',
         HttpStatus.INTERNAL_SERVER_ERROR,

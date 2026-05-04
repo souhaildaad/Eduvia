@@ -12,6 +12,7 @@ import { EmailModule } from 'src/email/email.module';
 import { UsersModule } from 'src/users/users.module';
 import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from '../users/user.schema';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 // import { UsersModule } from '../users/users.module'; // Décommente quand MongoDB prêt
 
@@ -22,6 +23,7 @@ import { User, UserSchema } from '../users/user.schema';
     JwtModule.register({}),
     EmailModule,
     UsersModule,
+    NotificationsModule,
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
   ],
 

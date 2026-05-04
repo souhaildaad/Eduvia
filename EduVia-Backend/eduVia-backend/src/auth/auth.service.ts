@@ -12,17 +12,72 @@ import { Model, Types } from 'mongoose';
 import axios from 'axios';
 import KcAdminClient from '@keycloak/keycloak-admin-client';
 import { URL } from 'url';
+import { createHash, randomBytes } from 'crypto';
 
 import { UsersService } from '../users/users.service';
 import { User } from '../users/user.schema';
 import { EmailService } from '../email/email.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import {
+  FACE_ID_MATCH_THRESHOLD,
+  normalizeFaceIdNumber,
+} from './face-id.constants';
+
+type TeachingAssignmentInput = {
+  subject?: string;
+  classes?: string[];
+};
+
+type TeachingAssignment = {
+  subject: string;
+  classes: string[];
+};
 
 @Injectable()
 export class AuthService {
   private kcAdmin: KcAdminClient;
   private readonly logger = new Logger(AuthService.name);
 
-  private resolveAppRole(roles: string[]): 'admin' | 'teacher' | 'student' | null {
+  private normalizeClassList(
+    values: Array<string | null | undefined>,
+  ): string[] {
+    return [
+      ...new Set(values.map((value) => value?.trim() || '').filter(Boolean)),
+    ].sort((a, b) => a.localeCompare(b, 'fr'));
+  }
+
+  private buildRoleFieldsForResponse(user: {
+    role?: string;
+    className?: string | null;
+    assignedClasses?: string[];
+    teachingSubjects?: string[];
+    teachingAssignments?: TeachingAssignmentInput[];
+  }) {
+    const assignedClasses = this.normalizeClassList(user.assignedClasses || []);
+    const teachingAssignments = this.resolveTeachingAssignments(
+      assignedClasses,
+      user.teachingSubjects || [],
+      user.teachingAssignments || [],
+    );
+    const teachingSubjects = this.normalizeClassList(
+      teachingAssignments.map((assignment) => assignment.subject),
+    );
+    const className =
+      user.role === 'teacher'
+        ? assignedClasses.join(', ')
+        : user.className?.trim() || '';
+
+    return {
+      className,
+      assignedClasses,
+      teachingSubjects,
+      teachingAssignments,
+    };
+  }
+
+  private resolveAppRole(
+    roles: string[],
+  ): 'admin' | 'teacher' | 'student' | null {
     if (roles.includes('admin')) return 'admin';
     if (roles.includes('teacher')) return 'teacher';
     if (roles.includes('student')) return 'student';
@@ -30,7 +85,8 @@ export class AuthService {
   }
 
   private async authenticateAdmin(): Promise<void> {
-    const adminRealm = this.configService.get('KEYCLOAK_ADMIN_REALM') || 'master';
+    const adminRealm =
+      this.configService.get('KEYCLOAK_ADMIN_REALM') || 'master';
     const targetRealm = this.configService.get('KEYCLOAK_REALM') || 'master';
 
     this.kcAdmin.setConfig({ realmName: adminRealm });
@@ -54,19 +110,60 @@ export class AuthService {
     username: string;
     firstName?: string;
     lastName?: string;
+    className?: string | null;
+    assignedClasses?: string[];
+    teachingSubjects?: string[];
+    teachingAssignments?: TeachingAssignmentInput[];
+    resetPasswordState?: boolean;
   }) {
-    const { userId, email, role, username, firstName, lastName } = params;
-    const updateData = {
+    const {
+      userId,
+      email,
+      role,
+      username,
+      firstName,
+      lastName,
+      className,
+      assignedClasses,
+      teachingSubjects,
+      teachingAssignments,
+      resetPasswordState,
+    } = params;
+    const normalizedAssignedClasses =
+      role === 'teacher' ? this.normalizeClassList(assignedClasses || []) : [];
+    const normalizedTeachingAssignments =
+      role === 'teacher'
+        ? this.resolveTeachingAssignments(
+            normalizedAssignedClasses,
+            teachingSubjects || [],
+            teachingAssignments || [],
+          )
+        : [];
+    const normalizedTeachingSubjects = this.normalizeClassList(
+      normalizedTeachingAssignments.map((assignment) => assignment.subject),
+    );
+    const updateData: any = {
       keycloakId: userId,
       email,
       role,
       firstName: firstName?.trim() || username,
       lastName: lastName?.trim() || role,
-      passwordChanged: false,
+      className: role === 'student' ? className?.trim() || null : null,
+      assignedClasses: normalizedAssignedClasses,
+      teachingSubjects: role === 'teacher' ? normalizedTeachingSubjects : [],
+      teachingAssignments:
+        role === 'teacher' ? normalizedTeachingAssignments : [],
       isBlocked: false,
     };
 
-    const existingByKeycloakId = await this.userModel.findOne({ keycloakId: userId });
+    if (resetPasswordState) {
+      updateData.passwordChanged = false;
+      updateData.firstLoginAt = null;
+    }
+
+    const existingByKeycloakId = await this.userModel.findOne({
+      keycloakId: userId,
+    });
     if (existingByKeycloakId) {
       Object.assign(existingByKeycloakId, updateData);
       return existingByKeycloakId.save();
@@ -107,7 +204,9 @@ export class AuthService {
       );
     }
 
-    const currentRoles = await this.kcAdmin.users.listRealmRoleMappings({ id: userId });
+    const currentRoles = await this.kcAdmin.users.listRealmRoleMappings({
+      id: userId,
+    });
     const removableRoles = currentRoles.filter((mappedRole: any) =>
       ['teacher', 'student'].includes(mappedRole.name),
     );
@@ -134,12 +233,259 @@ export class AuthService {
     });
   }
 
+  private normalizeRoleSpecificFields(params: {
+    role: 'teacher' | 'student';
+    className?: string;
+    assignedClasses?: string[];
+    teachingSubjects?: string[];
+    teachingAssignments?: TeachingAssignmentInput[];
+  }): {
+    className: string | null;
+    assignedClasses: string[];
+    teachingSubjects: string[];
+    teachingAssignments: TeachingAssignment[];
+  } {
+    const className = params.className?.trim();
+    const assignedClasses = [
+      ...new Set(
+        (params.assignedClasses || [])
+          .map((value) => value.trim())
+          .filter(Boolean),
+      ),
+    ];
+    const teachingAssignments = this.resolveTeachingAssignments(
+      assignedClasses,
+      params.teachingSubjects || [],
+      params.teachingAssignments || [],
+    );
+    const teachingSubjects = this.normalizeClassList(
+      teachingAssignments.map((assignment) => assignment.subject),
+    );
+
+    if (params.role === 'student') {
+      if (!className) {
+        throw new HttpException(
+          'La classe est obligatoire pour un etudiant',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      return {
+        className,
+        assignedClasses: [] as string[],
+        teachingSubjects: [] as string[],
+        teachingAssignments: [] as TeachingAssignment[],
+      };
+    }
+
+    if (assignedClasses.length === 0) {
+      throw new HttpException(
+        'Au moins une classe doit etre affectee a un enseignant',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (teachingSubjects.length === 0) {
+      throw new HttpException(
+        'Au moins une matiere doit etre affectee a un enseignant',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    return {
+      className: null,
+      assignedClasses,
+      teachingSubjects,
+      teachingAssignments,
+    };
+  }
+
+  private resolveTeachingAssignments(
+    assignedClasses: string[],
+    teachingSubjects: string[] = [],
+    teachingAssignments: TeachingAssignmentInput[] = [],
+  ): TeachingAssignment[] {
+    const normalizedAssignedClasses = this.normalizeClassList(
+      assignedClasses || [],
+    );
+    const classLookup = new Map(
+      normalizedAssignedClasses.map((className) => [
+        className.toLowerCase(),
+        className,
+      ]),
+    );
+    const assignmentMap = new Map<string, TeachingAssignment>();
+
+    const addAssignment = (subjectValue?: string, classValues?: string[]) => {
+      const subject = (subjectValue || '').trim();
+      if (!subject) {
+        return;
+      }
+
+      const requestedClasses = this.normalizeClassList(classValues || []);
+      const classes =
+        requestedClasses.length > 0
+          ? requestedClasses
+              .map((className) => classLookup.get(className.toLowerCase()))
+              .filter((className): className is string => !!className)
+          : normalizedAssignedClasses;
+
+      if (classes.length === 0) {
+        return;
+      }
+
+      const subjectKey = subject.toLowerCase();
+      const existing = assignmentMap.get(subjectKey);
+      if (existing) {
+        existing.classes = this.normalizeClassList([
+          ...existing.classes,
+          ...classes,
+        ]);
+        return;
+      }
+
+      assignmentMap.set(subjectKey, {
+        subject,
+        classes: this.normalizeClassList(classes),
+      });
+    };
+
+    const hasDetailedAssignments = teachingAssignments.some(
+      (assignment) => !!assignment?.subject?.trim(),
+    );
+
+    if (hasDetailedAssignments) {
+      teachingAssignments.forEach((assignment) =>
+        addAssignment(assignment?.subject, assignment?.classes),
+      );
+    } else {
+      teachingSubjects.forEach((subject) =>
+        addAssignment(subject, normalizedAssignedClasses),
+      );
+    }
+
+    return Array.from(assignmentMap.values()).sort((left, right) =>
+      left.subject.localeCompare(right.subject, 'fr'),
+    );
+  }
+
+  private async ensureTeacherClassSubjectsAvailable(
+    teachingAssignments: TeachingAssignment[],
+    excludedKeycloakId?: string,
+  ): Promise<void> {
+    if (teachingAssignments.length === 0) {
+      return;
+    }
+
+    const assignedClasses = this.normalizeClassList(
+      teachingAssignments.flatMap((assignment) => assignment.classes),
+    );
+    const conflictingTeachers = await this.userModel
+      .find({
+        role: 'teacher',
+        assignedClasses: { $in: assignedClasses },
+        ...(excludedKeycloakId
+          ? { keycloakId: { $ne: excludedKeycloakId } }
+          : {}),
+      })
+      .select(
+        'firstName lastName assignedClasses teachingSubjects teachingAssignments keycloakId',
+      );
+
+    const requestedPairs = new Set(
+      teachingAssignments.flatMap((assignment) =>
+        assignment.classes.map(
+          (className) =>
+            `${className.toLowerCase()}::${assignment.subject.toLowerCase()}`,
+        ),
+      ),
+    );
+    const conflicts = conflictingTeachers.flatMap((teacher) =>
+      this.resolveTeachingAssignments(
+        teacher.assignedClasses || [],
+        teacher.teachingSubjects || [],
+        (teacher as any).teachingAssignments || [],
+      ).flatMap((assignment) =>
+        assignment.classes
+          .filter((className) =>
+            requestedPairs.has(
+              `${className.toLowerCase()}::${assignment.subject.toLowerCase()}`,
+            ),
+          )
+          .map((className) => ({
+            className,
+            subject: assignment.subject,
+            teacherName:
+              `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim(),
+          })),
+      ),
+    );
+
+    if (conflicts.length === 0) {
+      return;
+    }
+
+    const conflictMessage = conflicts
+      .map((conflict) =>
+        conflict.teacherName
+          ? `${conflict.subject} en ${conflict.className} deja affectee a ${conflict.teacherName}`
+          : `${conflict.subject} en ${conflict.className} deja affectee`,
+      )
+      .join(', ');
+
+    throw new HttpException(conflictMessage, HttpStatus.CONFLICT);
+  }
+
   private getEmailVerificationSecret(): string {
     return (
       this.configService.get('EMAIL_VERIFICATION_SECRET') ||
       this.configService.get('JWT_SECRET') ||
       this.configService.get('KEYCLOAK_CLIENT_SECRET') ||
       'eduvia-email-verification-secret'
+    );
+  }
+
+  private getPasswordResetSecret(): string {
+    return (
+      this.configService.get('PASSWORD_RESET_SECRET') ||
+      this.configService.get('JWT_SECRET') ||
+      this.configService.get('KEYCLOAK_CLIENT_SECRET') ||
+      'eduvia-password-reset-secret'
+    );
+  }
+
+  private hashToken(value: string): string {
+    return createHash('sha256').update(value).digest('hex');
+  }
+
+  private hammingDistance(left: string, right: string) {
+    if (left.length !== right.length) {
+      return Number.POSITIVE_INFINITY;
+    }
+
+    return Array.from(left).reduce(
+      (distance, bit, index) => distance + (bit === right[index] ? 0 : 1),
+      0,
+    );
+  }
+
+  private buildAppAccessToken(user: User) {
+    const roles = [user.role].filter(Boolean);
+    return this.jwtService.sign(
+      {
+        sub: user.keycloakId,
+        email: user.email,
+        preferred_username: user.email,
+        realm_access: { roles },
+        roles,
+        typ: 'face-id',
+      },
+      {
+        secret: this.configService.get('JWT_SECRET') || 'eduvia-face-id-secret',
+        algorithm: 'HS256',
+        issuer: `${this.configService.getOrThrow('KEYCLOAK_URL')}/realms/${this.configService.getOrThrow('KEYCLOAK_REALM')}`,
+        expiresIn: '8h',
+      },
     );
   }
 
@@ -166,6 +512,45 @@ export class AuthService {
     return `${backendUrl}/auth/verify-email?token=${encodeURIComponent(token)}`;
   }
 
+  private buildRoleLoginRedirectUrl(role?: string): URL {
+    const frontendUrl =
+      this.configService.get('FRONTEND_URL') || 'http://localhost:4200';
+    const studentLoginUrl = this.configService.get('STUDENT_LOGIN_URL');
+    const teacherLoginUrl = this.configService.get('TEACHER_LOGIN_URL');
+    const explicitLoginUrl =
+      role === 'student'
+        ? studentLoginUrl
+        : role === 'teacher'
+          ? teacherLoginUrl
+          : undefined;
+
+    const redirectUrl = explicitLoginUrl
+      ? new URL(explicitLoginUrl, frontendUrl)
+      : new URL(frontendUrl);
+
+    if (role === 'student' || role === 'teacher') {
+      redirectUrl.searchParams.set('role', role);
+    }
+
+    return redirectUrl;
+  }
+
+  buildEmailVerificationRedirect(params: {
+    role?: string;
+    verified: boolean;
+    message?: string;
+  }): string {
+    const redirectUrl = this.buildRoleLoginRedirectUrl(params.role);
+
+    redirectUrl.searchParams.set('verified', params.verified ? '1' : '0');
+
+    if (params.message) {
+      redirectUrl.searchParams.set('message', params.message);
+    }
+
+    return redirectUrl.toString();
+  }
+
   private async inspectKeycloakLoginBlockers(email: string): Promise<{
     exists: boolean;
     enabled?: boolean;
@@ -176,7 +561,8 @@ export class AuthService {
 
     const users = await this.kcAdmin.users.find({ email, exact: true });
     const user = users.find(
-      (candidate: any) => candidate.email?.toLowerCase() === email.toLowerCase(),
+      (candidate: any) =>
+        candidate.email?.toLowerCase() === email.toLowerCase(),
     );
 
     if (!user) {
@@ -187,8 +573,42 @@ export class AuthService {
       exists: true,
       enabled: user.enabled,
       emailVerified: user.emailVerified,
-      requiredActions: Array.isArray(user.requiredActions) ? user.requiredActions : [],
+      requiredActions: Array.isArray(user.requiredActions)
+        ? user.requiredActions
+        : [],
     };
+  }
+
+  private async verifyPasswordAgainstKeycloak(
+    email: string,
+    password: string,
+  ): Promise<void> {
+    try {
+      await axios.post(
+        `${this.configService.get('KEYCLOAK_URL')}/realms/${this.configService.get('KEYCLOAK_REALM')}/protocol/openid-connect/token`,
+        new URLSearchParams({
+          grant_type: 'password',
+          client_id: this.configService.get('KEYCLOAK_CLIENT_ID') || '',
+          client_secret: this.configService.get('KEYCLOAK_CLIENT_SECRET') || '',
+          username: email,
+          password,
+        }),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+      );
+    } catch (error: any) {
+      if (
+        error.response?.status === 400 &&
+        error.response?.data?.error === 'invalid_grant'
+      ) {
+        throw new UnauthorizedException('Ancien mot de passe incorrect');
+      }
+
+      throw new HttpException(
+        error.response?.data?.error_description ||
+          'Echec de verification du mot de passe',
+        error.response?.status || HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 
   constructor(
@@ -196,6 +616,7 @@ export class AuthService {
     private jwtService: JwtService,
     private usersService: UsersService,
     private emailService: EmailService,
+    private notificationsService: NotificationsService,
     @InjectModel(User.name) private userModel: Model<User>,
   ) {
     this.kcAdmin = new KcAdminClient({
@@ -238,18 +659,32 @@ export class AuthService {
           passwordChanged: false,
         });
         await user.save();
-      } else if ((!user.role || !['admin', 'teacher', 'student'].includes(user.role)) && appRole) {
+      } else if (
+        (!user.role || !['admin', 'teacher', 'student'].includes(user.role)) &&
+        appRole
+      ) {
         user.role = appRole;
         await user.save();
       }
 
       await this.usersService.handleFirstLogin(userId);
 
-      const blocked = await this.usersService.checkAndBlockIfNeeded(userId, roles);
+      const blocked = await this.usersService.checkAndBlockIfNeeded(
+        userId,
+        roles,
+      );
       if (blocked) {
         throw new HttpException('Compte bloqué', HttpStatus.FORBIDDEN);
       }
-
+      // Met a jour la derniere activite reelle apres une connexion reussie.
+      await this.userModel.updateOne(
+        { keycloakId: userId },
+        {
+          $set: {
+            lastLogin: new Date(),
+          },
+        },
+      );
       // Pour les admins → on marque directement le mot de passe comme changé
       if (roles.includes('admin')) {
         await this.usersService.markPasswordChanged(userId);
@@ -261,8 +696,9 @@ export class AuthService {
 
       // L'obligation de changer le mot de passe ne concerne QUE teacher et student
       const requiresPasswordChange = roles.some((role) =>
-        ['teacher', 'student'].includes(role)
+        ['teacher', 'student'].includes(role),
       );
+      const roleFields = this.buildRoleFieldsForResponse(user);
 
       return {
         access_token,
@@ -272,23 +708,59 @@ export class AuthService {
           email: decoded.email,
           roles,
           role: mainRole,
+          className: roleFields.className,
+          assignedClasses: roleFields.assignedClasses,
         },
         needsPasswordChange: requiresPasswordChange && !passwordChanged,
       };
     } catch (error: any) {
-      this.logger.error(
-        `[LOGIN] Keycloak token request failed: status=${error.response?.status ?? 'unknown'} payload=${JSON.stringify(error.response?.data ?? error.message)}`,
-      );
+      const statusCode = error?.status || error?.response?.status;
+      const errorPayload =
+        error?.response?.data ?? error?.response ?? error?.message;
+
+      if (error instanceof HttpException) {
+        if (
+          statusCode === HttpStatus.FORBIDDEN &&
+          error?.message === 'Compte bloqué'
+        ) {
+          this.logger.warn(`[LOGIN] blocked account email=${email}`);
+        } else {
+          this.logger.warn(
+            `[LOGIN] handled exception status=${statusCode ?? 'unknown'} payload=${JSON.stringify(errorPayload)}`,
+          );
+        }
+
+        throw error;
+      } else {
+        this.logger.error(
+          `[LOGIN] Keycloak token request failed: status=${statusCode ?? 'unknown'} payload=${JSON.stringify(errorPayload)}`,
+        );
+      }
 
       if (
         error.response?.status === 400 &&
-        error.response?.data?.error === 'invalid_grant' &&
-        error.response?.data?.error_description === 'Account is not fully set up'
+        error.response?.data?.error === 'invalid_grant'
       ) {
+        const errorDescription = error.response?.data?.error_description || '';
+
+        if (errorDescription === 'Account disabled') {
+          throw new HttpException(
+            'Compte desactive ou bloque dans Keycloak',
+            HttpStatus.FORBIDDEN,
+          );
+        }
+
+        if (errorDescription !== 'Account is not fully set up') {
+          throw new UnauthorizedException('Identifiants invalides');
+        }
+
         const blockers = await this.inspectKeycloakLoginBlockers(email);
 
         if (blockers.exists && blockers.enabled === false) {
-          throw new HttpException('Compte desactive ou bloque dans Keycloak', HttpStatus.FORBIDDEN);
+          throw new HttpException(
+            'Compte desactive ou bloque dans Keycloak',
+            HttpStatus.FORBIDDEN,
+          );
         }
 
         if (blockers.exists && blockers.emailVerified === false) {
@@ -349,7 +821,98 @@ export class AuthService {
     return response.data;
   }
 
+  async loginWithFaceId(faceHash: string, role?: 'teacher' | 'student') {
+    const candidates = await this.userModel
+      .find({
+        role: role || { $in: ['teacher', 'student'] },
+        'profileData.faceIdHash': { $type: 'string' },
+        isBlocked: { $ne: true },
+      })
+      .exec();
+
+    const ranked = candidates
+      .map((user) => ({
+        user,
+        distance: this.hammingDistance(
+          faceHash,
+          String(user.profileData?.faceIdHash || ''),
+        ),
+      }))
+      .sort((left, right) => left.distance - right.distance);
+
+    const matchThreshold = this.faceIdMatchThreshold();
+    const best = ranked[0];
+    if (!best || best.distance > matchThreshold) {
+      throw new UnauthorizedException(
+        "Face ID non reconnu. Utilisez la connexion classique.",
+      );
+    }
+
+    const user = best.user;
+    await this.usersService.handleFirstLogin(user.keycloakId);
+    await this.userModel.updateOne(
+      { keycloakId: user.keycloakId },
+      { $set: { lastLogin: new Date() } },
+    );
+
+    return {
+      access_token: this.buildAppAccessToken(user),
+      refresh_token: '',
+      role: user.role,
+      user: {
+        id: user._id,
+        keycloakId: user.keycloakId,
+        email: user.email,
+        role: user.role,
+        roles: [user.role],
+        firstName: user.firstName,
+        lastName: user.lastName,
+        className: user.className,
+      },
+      faceMatchDistance: best.distance,
+    };
+  }
+
+  private faceIdMatchThreshold() {
+    return normalizeFaceIdNumber(
+      this.configService.get('FACE_ID_MATCH_THRESHOLD'),
+      FACE_ID_MATCH_THRESHOLD,
+    );
+  }
+
   // ───────── CHANGE PASSWORD ─────────
+  async validateCurrentPasswordForSecurity(
+    userId: string,
+    currentPassword: string,
+  ) {
+    const user = await this.userModel.findOne({ keycloakId: userId });
+
+    if (!user) {
+      throw new HttpException('Utilisateur introuvable', HttpStatus.NOT_FOUND);
+    }
+
+    if (!currentPassword?.trim()) {
+      throw new HttpException(
+        'Ancien mot de passe obligatoire',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    await this.verifyPasswordAgainstKeycloak(user.email, currentPassword);
+
+    const passwordWasPreviouslyChangedByUser = !!user.passwordChanged;
+
+    return {
+      valid: true,
+      canUseAsCurrentPassword: true,
+      unlockNewPasswordFields: true,
+      passwordWasPreviouslyChangedByUser,
+      message: passwordWasPreviouslyChangedByUser
+        ? 'Ancien mot de passe verifie'
+        : 'Mot de passe temporaire verifie. Vous pouvez maintenant definir votre nouveau mot de passe.',
+    };
+  }
+
   async changePassword(userId: string, newPassword: string) {
     await this.authenticateAdmin();
 
@@ -367,7 +930,10 @@ export class AuthService {
 
   async verifyEmailAndBuildRedirect(token: string): Promise<string> {
     if (!token) {
-      throw new HttpException('Lien de verification manquant', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'Lien de verification manquant',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     let payload: any;
@@ -377,50 +943,272 @@ export class AuthService {
         secret: this.getEmailVerificationSecret(),
       });
     } catch {
-      throw new HttpException('Lien de verification invalide ou expire', HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        'Lien de verification invalide ou expire',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
-    if (payload?.type !== 'email-verification' || !payload?.sub || !payload?.role) {
-      throw new HttpException('Jeton de verification invalide', HttpStatus.BAD_REQUEST);
+    if (
+      payload?.type !== 'email-verification' ||
+      !payload?.sub ||
+      !payload?.email ||
+      !['teacher', 'student'].includes(payload?.role)
+    ) {
+      throw new HttpException(
+        'Jeton de verification invalide',
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
-    await this.authenticateAdmin();
+    try {
+      await this.authenticateAdmin();
 
-    await this.kcAdmin.users.update(
-      { id: payload.sub },
-      {
+      await this.kcAdmin.users.update({ id: payload.sub }, {
         emailVerified: true,
-      } as any,
+      } as any);
+
+      await this.userModel.updateOne(
+        {
+          $or: [
+            { keycloakId: payload.sub },
+            { email: String(payload.email).toLowerCase().trim() },
+          ],
+        },
+        {
+          $set: {
+            emailVerified: true,
+          },
+        },
+      );
+    } catch (error: any) {
+      this.logger.error(
+        `[VERIFY EMAIL] userId=${payload.sub} role=${payload.role} status=${error?.response?.status ?? error?.status ?? 'unknown'} payload=${JSON.stringify(error?.response?.data ?? error?.message)}`,
+      );
+
+      if (error?.response?.status === 404) {
+        throw new HttpException(
+          'Utilisateur introuvable dans Keycloak',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      throw new HttpException(
+        'Echec de verification de l email',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+
+    return this.buildEmailVerificationRedirect({
+      role: payload.role,
+      verified: true,
+      message:
+        'Email verifie avec succes. Vous pouvez maintenant vous connecter.',
+    });
+  }
+
+  // ───────── CREATE USER ─────────
+  async requestPasswordReset(
+    email: string,
+    role?: 'teacher' | 'student',
+  ): Promise<{ success: true; message: string }> {
+    const normalizedEmail = email?.toLowerCase().trim();
+
+    const query: any = {
+      email: normalizedEmail,
+      role: role || { $in: ['teacher', 'student'] },
+    };
+
+    const user = await this.userModel.findOne(query);
+
+    // Avoid account enumeration.
+    if (!user || !user.keycloakId) {
+      return {
+        success: true,
+        message: 'If the account exists, a reset email has been sent',
+      };
+    }
+
+    const tokenId = randomBytes(32).toString('hex');
+    const resetToken = this.jwtService.sign(
+      {
+        sub: user.keycloakId,
+        email: user.email,
+        role: user.role,
+        type: 'password-reset',
+        jti: tokenId,
+      },
+      {
+        secret: this.getPasswordResetSecret(),
+        expiresIn: '1h',
+      },
     );
 
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
     await this.userModel.updateOne(
-      { keycloakId: payload.sub },
+      { _id: user._id },
       {
         $set: {
-          emailVerified: true,
+          resetPasswordTokenHash: this.hashToken(tokenId),
+          resetPasswordExpiresAt: expiresAt,
         },
       },
     );
 
     const frontendUrl =
       this.configService.get('FRONTEND_URL') || 'http://localhost:4200';
-    const redirectUrl = new URL(frontendUrl);
-    redirectUrl.searchParams.set('role', payload.role);
-    redirectUrl.searchParams.set('verified', '1');
+    const resetLink = `${frontendUrl}/?role=${user.role}&resetToken=${encodeURIComponent(
+      resetToken,
+    )}`;
 
-    return redirectUrl.toString();
+    await this.emailService.sendPasswordResetEmail({
+      to: user.email,
+      resetLink,
+      appName: 'EduVia',
+      expirationMinutes: 60,
+      firstName: user.firstName,
+      role: user.role as 'teacher' | 'student',
+    });
+
+    return {
+      success: true,
+      message: 'If the account exists, a reset email has been sent',
+    };
   }
 
-  // ───────── CREATE USER ─────────
+  private async validateAndLoadPasswordResetToken(token: string): Promise<{
+    user: User | null;
+    payload: any;
+  }> {
+    if (!token) {
+      throw new HttpException(
+        'Reset token is required',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    let payload: any;
+
+    try {
+      payload = this.jwtService.verify(token, {
+        secret: this.getPasswordResetSecret(),
+      });
+    } catch {
+      throw new HttpException(
+        'Reset token is invalid or expired',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    if (
+      payload?.type !== 'password-reset' ||
+      !payload?.sub ||
+      !payload?.jti ||
+      !payload?.role
+    ) {
+      throw new HttpException('Invalid reset token', HttpStatus.BAD_REQUEST);
+    }
+
+    const user = await this.userModel.findOne({
+      keycloakId: payload.sub,
+      role: payload.role,
+    });
+
+    if (!user || !user.resetPasswordTokenHash || !user.resetPasswordExpiresAt) {
+      throw new HttpException('Reset token is invalid', HttpStatus.BAD_REQUEST);
+    }
+
+    if (user.resetPasswordExpiresAt.getTime() < Date.now()) {
+      throw new HttpException(
+        'Reset token has expired',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const providedHash = this.hashToken(payload.jti);
+    if (providedHash !== user.resetPasswordTokenHash) {
+      throw new HttpException(
+        'Reset token is no longer valid',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    return { user, payload };
+  }
+
+  async validateResetPasswordToken(token: string) {
+    const { user } = await this.validateAndLoadPasswordResetToken(token);
+
+    return {
+      valid: true,
+      role: user?.role,
+      email: user?.email,
+      expiresAt: user?.resetPasswordExpiresAt,
+    };
+  }
+
+  async resetPasswordWithToken(token: string, newPassword: string) {
+    const { user, payload } =
+      await this.validateAndLoadPasswordResetToken(token);
+
+    await this.authenticateAdmin();
+
+    await this.kcAdmin.users.resetPassword({
+      id: payload.sub,
+      credential: {
+        type: 'password',
+        value: newPassword,
+        temporary: false,
+      },
+    });
+
+    await this.userModel.updateOne(
+      { _id: user?._id },
+      {
+        $set: {
+          passwordChanged: true,
+          lastPasswordChange: new Date(),
+          isBlocked: false,
+          resetPasswordTokenHash: null,
+          resetPasswordExpiresAt: null,
+        },
+      },
+    );
+
+    return {
+      success: true,
+      message: 'Password has been reset successfully',
+    };
+  }
+
   async createAndSendCredentials(
     email: string,
     username: string,
     role: 'teacher' | 'student',
     firstName?: string,
     lastName?: string,
+    className?: string,
+    assignedClasses?: string[],
+    teachingSubjects?: string[],
+    teachingAssignments?: TeachingAssignmentInput[],
   ) {
     await this.authenticateAdmin();
+    const normalizedRoleFields = this.normalizeRoleSpecificFields({
+      role,
+      className,
+      assignedClasses,
+      teachingSubjects,
+      teachingAssignments,
+    });
+    if (role === 'teacher') {
+      await this.ensureTeacherClassSubjectsAvailable(
+        normalizedRoleFields.teachingAssignments,
+      );
+    }
 
+    const normalizedEmail = email.toLowerCase().trim();
+    const keycloakUsername = normalizedEmail;
     const tempPassword = Math.random().toString(36).slice(-8);
     let userId: string | undefined;
     let reusedExistingUser = false;
@@ -428,8 +1216,8 @@ export class AuthService {
 
     try {
       const created = await this.kcAdmin.users.create({
-        username,
-        email,
+        username: keycloakUsername,
+        email: normalizedEmail,
         enabled: true,
         emailVerified: false,
         firstName,
@@ -450,13 +1238,19 @@ export class AuthService {
         throw error;
       }
 
-      const existingUsers = await this.kcAdmin.users.find({ email, exact: true });
+      const existingUsers = await this.kcAdmin.users.find({
+        email: normalizedEmail,
+        exact: true,
+      });
       const existingUser = existingUsers.find(
-        (user: any) => user.email?.toLowerCase() === email.toLowerCase(),
+        (user: any) => user.email?.toLowerCase() === normalizedEmail,
       );
 
       if (!existingUser?.id) {
-        throw new HttpException('User exists in Keycloak but could not be loaded', HttpStatus.CONFLICT);
+        throw new HttpException(
+          'User exists in Keycloak but could not be loaded',
+          HttpStatus.CONFLICT,
+        );
       }
 
       userId = existingUser.id;
@@ -477,8 +1271,12 @@ export class AuthService {
       name: roleRep.name,
     };
 
-    const currentRoles = await this.kcAdmin.users.listRealmRoleMappings({ id: userId });
-    const hasRoleAlready = currentRoles.some((mappedRole: any) => mappedRole.name === role);
+    const currentRoles = await this.kcAdmin.users.listRealmRoleMappings({
+      id: userId,
+    });
+    const hasRoleAlready = currentRoles.some(
+      (mappedRole: any) => mappedRole.name === role,
+    );
 
     if (!hasRoleAlready) {
       await this.kcAdmin.users.addRealmRoleMappings({
@@ -488,18 +1286,15 @@ export class AuthService {
     }
 
     if (reusedExistingUser) {
-      await this.kcAdmin.users.update(
-        { id: userId },
-        {
-          username,
-          email,
-          enabled: true,
-          emailVerified: false,
-          firstName,
-          lastName,
-          requiredActions: [],
-        } as any,
-      );
+      await this.kcAdmin.users.update({ id: userId }, {
+        username: keycloakUsername,
+        email: normalizedEmail,
+        enabled: true,
+        emailVerified: false,
+        firstName,
+        lastName,
+        requiredActions: [],
+      } as any);
 
       await this.kcAdmin.users.resetPassword({
         id: userId,
@@ -513,22 +1308,27 @@ export class AuthService {
 
     const savedUser = await this.syncUserToMongo({
       userId,
-      email,
+      email: normalizedEmail,
       role,
-      username,
+      username: keycloakUsername,
       firstName,
       lastName,
+      className: normalizedRoleFields.className,
+      assignedClasses: normalizedRoleFields.assignedClasses,
+      teachingSubjects: normalizedRoleFields.teachingSubjects,
+      teachingAssignments: normalizedRoleFields.teachingAssignments,
+      resetPasswordState: true,
     });
 
     if (!hasRoleAlready) {
       const verificationLink = this.buildEmailVerificationLink({
         userId,
-        email,
+        email: normalizedEmail,
         role,
       });
 
       await this.emailService.sendIdentificationEmail(
-        email,
+        normalizedEmail,
         userId,
         tempPassword,
         role,
@@ -538,12 +1338,12 @@ export class AuthService {
     } else if (reusedExistingUser && shouldSendCredentials) {
       const verificationLink = this.buildEmailVerificationLink({
         userId,
-        email,
+        email: normalizedEmail,
         role,
       });
 
       await this.emailService.sendIdentificationEmail(
-        email,
+        normalizedEmail,
         userId,
         tempPassword,
         role,
@@ -551,6 +1351,16 @@ export class AuthService {
         verificationLink,
       );
     }
+
+    const roleFields = this.buildRoleFieldsForResponse(
+      savedUser || {
+        role,
+        className: normalizedRoleFields.className,
+        assignedClasses: normalizedRoleFields.assignedClasses,
+        teachingSubjects: normalizedRoleFields.teachingSubjects,
+        teachingAssignments: normalizedRoleFields.teachingAssignments,
+      },
+    );
 
     return {
       message: reusedExistingUser
@@ -560,11 +1370,15 @@ export class AuthService {
       data: {
         id: savedUser?._id,
         keycloakId: userId,
-        email,
-        username,
+        email: normalizedEmail,
+        username: keycloakUsername,
         firstName: savedUser?.firstName,
         lastName: savedUser?.lastName,
         role,
+        className: roleFields.className,
+        assignedClasses: roleFields.assignedClasses,
+        teachingSubjects: roleFields.teachingSubjects,
+        teachingAssignments: roleFields.teachingAssignments,
       },
     };
   }
@@ -577,32 +1391,61 @@ export class AuthService {
       role: 'teacher' | 'student';
       firstName?: string;
       lastName?: string;
+      className?: string;
+      assignedClasses?: string[];
+      teachingSubjects?: string[];
+      teachingAssignments?: TeachingAssignmentInput[];
     },
   ) {
     const user = await this.findManagedUserOrThrow(identifier);
     await this.authenticateAdmin();
+    const normalizedEmail = params.email.toLowerCase().trim();
+    const normalizedRoleFields = this.normalizeRoleSpecificFields({
+      role: params.role,
+      className: params.className,
+      assignedClasses: params.assignedClasses,
+      teachingSubjects: params.teachingSubjects,
+      teachingAssignments: params.teachingAssignments,
+    });
+    if (params.role === 'teacher') {
+      await this.ensureTeacherClassSubjectsAvailable(
+        normalizedRoleFields.teachingAssignments,
+        user.keycloakId,
+      );
+    }
 
-    await this.kcAdmin.users.update(
-      { id: user.keycloakId },
-      {
-        email: params.email,
-        username: params.username,
-        firstName: params.firstName,
-        lastName: params.lastName,
-        enabled: !user.isBlocked,
-      } as any,
-    );
+    await this.kcAdmin.users.update({ id: user.keycloakId }, {
+      email: normalizedEmail,
+      username: normalizedEmail,
+      firstName: params.firstName,
+      lastName: params.lastName,
+      enabled: true,
+    } as any);
 
     await this.ensureRealmRoleAssigned(user.keycloakId, params.role);
 
     const savedUser = await this.syncUserToMongo({
       userId: user.keycloakId,
-      email: params.email,
+      email: normalizedEmail,
       role: params.role,
-      username: params.username,
+      username: normalizedEmail,
       firstName: params.firstName,
       lastName: params.lastName,
+      className: normalizedRoleFields.className,
+      assignedClasses: normalizedRoleFields.assignedClasses,
+      teachingSubjects: normalizedRoleFields.teachingSubjects,
+      teachingAssignments: normalizedRoleFields.teachingAssignments,
     });
+
+    const roleFields = this.buildRoleFieldsForResponse(
+      savedUser || {
+        role: params.role,
+        className: normalizedRoleFields.className,
+        assignedClasses: normalizedRoleFields.assignedClasses,
+        teachingSubjects: normalizedRoleFields.teachingSubjects,
+        teachingAssignments: normalizedRoleFields.teachingAssignments,
+      },
+    );
 
     return {
       success: true,
@@ -614,6 +1457,10 @@ export class AuthService {
         firstName: savedUser?.firstName,
         lastName: savedUser?.lastName,
         role: savedUser?.role,
+        className: roleFields.className,
+        assignedClasses: roleFields.assignedClasses,
+        teachingSubjects: roleFields.teachingSubjects,
+        teachingAssignments: roleFields.teachingAssignments,
       },
     };
   }
@@ -635,6 +1482,10 @@ export class AuthService {
     }
 
     await this.userModel.deleteOne({ _id: user._id });
+    await this.notificationsService.hardDeleteForUser(
+      user.email,
+      user.keycloakId,
+    );
 
     return {
       success: true,
