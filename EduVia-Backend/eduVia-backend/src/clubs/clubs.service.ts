@@ -10,6 +10,8 @@ type StudiedCourse = {
   title: string;
   score: number;
   studiedCount: number;
+  quizAverageScore?: number;
+  recentScore?: number;
 };
 
 type ClubRecommendation = ClubSeed & {
@@ -19,6 +21,17 @@ type ClubRecommendation = ClubSeed & {
   matchedCourses: string[];
   matchedKeywords: string[];
   recommendationReason: string;
+};
+
+type StudentRecommendationSignals = {
+  className: string;
+  specialization: string;
+  profileTokens: string[];
+  recentKeywords: string[];
+  averageQuizScore: number;
+  progressMomentum: number;
+  contactedClubIds: Set<string>;
+  ignoredClubIds: Set<string>;
 };
 
 @Injectable()
@@ -80,6 +93,11 @@ export class ClubsService {
             courseTitleByReference,
           )
         : [];
+    const studentSignals = this.buildStudentSignals(
+      student,
+      contentById,
+      courseTitleByReference,
+    );
     const source =
       studiedCourses.length > 0
         ? 'student-progress'
@@ -91,7 +109,8 @@ export class ClubsService {
             contentById,
             courseTitleByReference,
           );
-    const recommendations = this.rankClubs(courses).slice(0, normalizedLimit);
+    const rankedClubs = this.rankClubs(courses, studentSignals);
+    const recommendations = rankedClubs.slice(0, normalizedLimit);
 
     return {
       source,
@@ -101,7 +120,7 @@ export class ClubsService {
         studiedCount,
       })),
       recommendations,
-      clubs: this.rankClubs(courses),
+      clubs: rankedClubs,
     };
   }
 
@@ -123,7 +142,7 @@ export class ClubsService {
         role: 'student',
         ...identityQuery,
       })
-      .select({ learningProgress: 1 })
+      .select({ learningProgress: 1, className: 1, profileData: 1 })
       .lean()
       .exec();
 
@@ -176,6 +195,7 @@ export class ClubsService {
         content,
         this.progressWeight(entry),
         courseTitleByReference,
+        entry,
       );
     });
 
@@ -209,6 +229,7 @@ export class ClubsService {
             content,
             this.progressWeight(entry),
             courseTitleByReference,
+            entry,
           );
         },
       );
@@ -230,6 +251,7 @@ export class ClubsService {
     content: any,
     weight: number,
     courseTitleByReference: Map<string, string>,
+    progressEntry?: any,
   ) {
     if (weight <= 0) {
       return;
@@ -246,54 +268,169 @@ export class ClubsService {
       title,
       score: 0,
       studiedCount: 0,
+      quizAverageScore: 0,
+      recentScore: 0,
     };
     current.score += weight;
     current.studiedCount += 1;
+    current.quizAverageScore = this.mergeAverageScore(
+      current.quizAverageScore,
+      current.studiedCount,
+      this.extractProgressScore(progressEntry),
+    );
+    if (this.isRecentProgress(progressEntry)) {
+      current.recentScore = (current.recentScore || 0) + weight;
+    }
     courseMap.set(key, current);
   }
 
-  private rankClubs(courses: StudiedCourse[]): ClubRecommendation[] {
+  private rankClubs(
+    courses: StudiedCourse[],
+    signals: StudentRecommendationSignals = this.emptyStudentSignals(),
+  ): ClubRecommendation[] {
     const maxScore = Math.max(...courses.map((course) => course.score), 1);
 
     return CLUBS.map((club) => {
       const clubKeywords = this.clubKeywords(club);
+      const clubId = this.toClubView(club).id;
       const matchedCourses = new Set<string>();
       const matchedKeywords = new Set<string>();
-      let score = 0;
+      let courseMatchScore = 0;
 
       courses.forEach((course) => {
         const courseText = this.normalizeReference(course.title);
-        const matches = clubKeywords.filter(
-          (keyword) =>
-            courseText.includes(keyword) ||
-            keyword.includes(courseText) ||
-            this.keywordAliases(keyword).some((alias) => courseText.includes(alias)),
+        const matches = clubKeywords.filter((keyword) =>
+          this.isKeywordMatch(courseText, keyword),
         );
 
         if (matches.length > 0) {
           matchedCourses.add(course.title);
           matches.forEach((keyword) => matchedKeywords.add(keyword));
-          score += course.score * Math.min(matches.length, 3);
+          courseMatchScore += course.score * Math.min(matches.length, 3);
         }
       });
 
-      const boostedScore = score + this.domainBoost(club, courses);
+      const categoryScore = this.categoryFitScore(club, courses, signals);
+      const progressScore = this.recentInterestScore(clubKeywords, signals);
+      const quizScore = this.quizPerformanceScore(clubKeywords, courses, signals);
+      const specialtyScore = this.specialtyScore(clubKeywords, signals);
+      const manualTagScore = this.domainBoost(club, courses);
+      const interactionPenalty =
+        signals.ignoredClubIds.has(clubId) ? 8 : signals.contactedClubIds.has(clubId) ? 2 : 0;
+      const baselineScore = this.baselineExplorationScore(club, signals);
+      const finalScore = Math.max(
+        0,
+        courseMatchScore +
+          categoryScore +
+          progressScore +
+          quizScore +
+          specialtyScore +
+          manualTagScore +
+          baselineScore -
+          interactionPenalty,
+      );
+      const scoreCeiling = Math.max(maxScore * 3 + 18, 24);
 
       return {
         ...this.toClubView(club),
-        score: Number(boostedScore.toFixed(2)),
+        score: Number(finalScore.toFixed(2)),
         recommendationRate: Math.min(
           100,
-          Math.round((boostedScore / (maxScore * 3)) * 100),
+          Math.max(8, Math.round((finalScore / scoreCeiling) * 100)),
         ),
         matchedCourses: Array.from(matchedCourses).slice(0, 4),
         matchedKeywords: Array.from(matchedKeywords).slice(0, 8),
-        recommendationReason: this.buildReason(club, Array.from(matchedCourses)),
+        recommendationReason: this.buildReason(club, Array.from(matchedCourses), {
+          courseMatchScore,
+          progressScore,
+          quizScore,
+          specialtyScore,
+          categoryScore,
+        }),
       };
     }).sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
       return left.name.localeCompare(right.name, 'fr', { sensitivity: 'base' });
     });
+  }
+
+  private buildStudentSignals(
+    student: any,
+    contentById: Map<string, any>,
+    courseTitleByReference: Map<string, string>,
+  ): StudentRecommendationSignals {
+    if (!student) {
+      return this.emptyStudentSignals();
+    }
+
+    const progressEntries = Array.isArray(student.learningProgress)
+      ? student.learningProgress
+      : [];
+    const recentKeywords = new Set<string>();
+    const quizScores: number[] = [];
+    let recentProgressWeight = 0;
+
+    progressEntries.forEach((entry: any) => {
+      const content = contentById.get(String(entry?.contentId || '').trim());
+      const score = Number(entry?.score);
+      if (Number.isFinite(score)) {
+        quizScores.push(Math.max(0, Math.min(100, score)));
+      }
+
+      if (this.isRecentProgress(entry)) {
+        recentProgressWeight += this.progressWeight(entry);
+        [
+          this.resolveCourseTitle(content, courseTitleByReference),
+          content?.title,
+          content?.chapterId,
+          content?.partId,
+          content?.quizDifficulty,
+        ]
+          .flatMap((value) => this.tokenize(value))
+          .forEach((token) => recentKeywords.add(token));
+      }
+    });
+
+    const profileTokens = [
+      student.className,
+      student.profileData?.className,
+      student.profileData?.specialization,
+      student.profileData?.specialite,
+      student.profileData?.bio,
+    ].flatMap((value) => this.tokenize(value));
+    const interactions = student.profileData?.clubInteractions || {};
+
+    return {
+      className: String(student.className || student.profileData?.className || '').trim(),
+      specialization: String(
+        student.profileData?.specialization || student.profileData?.specialite || '',
+      ).trim(),
+      profileTokens: [...new Set(profileTokens)],
+      recentKeywords: Array.from(recentKeywords),
+      averageQuizScore: quizScores.length
+        ? Math.round(quizScores.reduce((sum, score) => sum + score, 0) / quizScores.length)
+        : 0,
+      progressMomentum: Math.min(1, recentProgressWeight / 12),
+      contactedClubIds: new Set(
+        Array.isArray(interactions.contacted) ? interactions.contacted.map(String) : [],
+      ),
+      ignoredClubIds: new Set(
+        Array.isArray(interactions.ignored) ? interactions.ignored.map(String) : [],
+      ),
+    };
+  }
+
+  private emptyStudentSignals(): StudentRecommendationSignals {
+    return {
+      className: '',
+      specialization: '',
+      profileTokens: [],
+      recentKeywords: [],
+      averageQuizScore: 0,
+      progressMomentum: 0,
+      contactedClubIds: new Set(),
+      ignoredClubIds: new Set(),
+    };
   }
 
   private domainBoost(club: ClubSeed, courses: StudiedCourse[]) {
@@ -312,12 +449,165 @@ export class ClubsService {
     );
   }
 
-  private buildReason(club: ClubSeed, matchedCourses: string[]) {
-    if (matchedCourses.length > 0) {
-      return `Recommande car tes cours les plus etudies correspondent a ${club.category}: ${matchedCourses.slice(0, 2).join(', ')}.`;
+  private categoryFitScore(
+    club: ClubSeed,
+    courses: StudiedCourse[],
+    signals: StudentRecommendationSignals,
+  ) {
+    const clubKeywords = this.clubKeywords(club);
+    const categoryTokens = this.tokenize(club.category);
+    const courseTokens = courses.flatMap((course) => this.tokenize(course.title));
+    const profileMatches = signals.profileTokens.filter((token) =>
+      clubKeywords.some((keyword) => this.isKeywordMatch(token, keyword)),
+    ).length;
+    const courseCategoryMatches = categoryTokens.filter((token) =>
+      courseTokens.some((courseToken) => this.isKeywordMatch(courseToken, token)),
+    ).length;
+
+    return Math.min(8, profileMatches * 1.5 + courseCategoryMatches * 1.2);
+  }
+
+  private recentInterestScore(
+    clubKeywords: string[],
+    signals: StudentRecommendationSignals,
+  ) {
+    const recentMatches = signals.recentKeywords.filter((token) =>
+      clubKeywords.some((keyword) => this.isKeywordMatch(token, keyword)),
+    ).length;
+
+    return Math.min(9, recentMatches * 1.4 + signals.progressMomentum * 4);
+  }
+
+  private quizPerformanceScore(
+    clubKeywords: string[],
+    courses: StudiedCourse[],
+    signals: StudentRecommendationSignals,
+  ) {
+    const matchedCourseHasQuizScore = courses.some((course) => {
+      const courseTokens = this.tokenize(course.title);
+      const hasMatch = courseTokens.some((token) =>
+        clubKeywords.some((keyword) => this.isKeywordMatch(token, keyword)),
+      );
+      return hasMatch && Number(course.quizAverageScore || 0) > 0;
+    });
+    const averageScore =
+      courses
+        .map((course) => Number(course.quizAverageScore || 0))
+        .filter((score) => score > 0)
+        .reduce((sum, score, _index, scores) => sum + score / scores.length, 0) ||
+      signals.averageQuizScore;
+
+    if (!averageScore) {
+      return 0;
     }
 
-    return `Club propose pour explorer le domaine ${club.category}.`;
+    const bestScoreBonus = Math.max(0, Math.min(100, averageScore)) / 100;
+    return matchedCourseHasQuizScore ? 2 + bestScoreBonus * 6 : bestScoreBonus * 3;
+  }
+
+  private specialtyScore(
+    clubKeywords: string[],
+    signals: StudentRecommendationSignals,
+  ) {
+    const profileMatches = signals.profileTokens.filter((token) =>
+      clubKeywords.some((keyword) => this.isKeywordMatch(token, keyword)),
+    ).length;
+
+    return Math.min(10, profileMatches * 2);
+  }
+
+  private baselineExplorationScore(club: ClubSeed, signals: StudentRecommendationSignals) {
+    const broadCategories = ['culture', 'humanitaire', 'entrepreneuriat', 'innovation'];
+    const category = this.normalizeReference(club.category);
+    const broadBonus = broadCategories.some((token) => category.includes(token)) ? 2 : 0;
+    const profileBonus = signals.profileTokens.length > 0 ? 1 : 0;
+
+    return 3 + broadBonus + profileBonus;
+  }
+
+  private buildReason(
+    club: ClubSeed,
+    matchedCourses: string[],
+    scores?: {
+      courseMatchScore: number;
+      progressScore: number;
+      quizScore: number;
+      specialtyScore: number;
+      categoryScore: number;
+    },
+  ) {
+    if (matchedCourses.length > 0) {
+      const reasons = [
+        `cours alignes avec ${club.category}: ${matchedCourses.slice(0, 2).join(', ')}`,
+      ];
+      if (Number(scores?.quizScore || 0) > 0) {
+        reasons.push('bons scores de quiz');
+      }
+      if (Number(scores?.progressScore || 0) > 0) {
+        reasons.push('interet recent');
+      }
+      if (Number(scores?.specialtyScore || 0) > 0) {
+        reasons.push('specialite/profil compatible');
+      }
+
+      return `Recommande selon ${reasons.join(' + ')}.`;
+    }
+
+    if (
+      Number(scores?.categoryScore || 0) > 0 ||
+      Number(scores?.specialtyScore || 0) > 0
+    ) {
+      return `Club propose car ton profil ou ta classe se rapproche du domaine ${club.category}.`;
+    }
+
+    return `Club propose pour explorer le domaine ${club.category}, avec un score de decouverte non nul.`;
+  }
+
+  private mergeAverageScore(currentAverage: number | undefined, count: number, nextScore: number | null) {
+    if (nextScore === null) {
+      return currentAverage || 0;
+    }
+
+    const previousCount = Math.max(0, count - 1);
+    const previousTotal = (currentAverage || 0) * previousCount;
+
+    return Math.round((previousTotal + nextScore) / Math.max(1, count));
+  }
+
+  private extractProgressScore(entry: any): number | null {
+    const score = Number(entry?.score);
+    return Number.isFinite(score) ? Math.max(0, Math.min(100, score)) : null;
+  }
+
+  private isRecentProgress(entry: any) {
+    if (!entry) {
+      return false;
+    }
+
+    const rawDate = entry.updatedAt || entry.completedAt || entry.submittedAt;
+    const date = rawDate ? new Date(rawDate) : null;
+    if (!date || Number.isNaN(date.getTime())) {
+      return false;
+    }
+
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    return Date.now() - date.getTime() <= thirtyDaysMs;
+  }
+
+  private isKeywordMatch(text: string, keyword: string) {
+    const normalizedText = this.normalizeReference(text);
+    const normalizedKeyword = this.normalizeReference(keyword);
+    if (!normalizedText || !normalizedKeyword) {
+      return false;
+    }
+
+    return (
+      normalizedText.includes(normalizedKeyword) ||
+      normalizedKeyword.includes(normalizedText) ||
+      this.keywordAliases(normalizedKeyword).some((alias) =>
+        normalizedText.includes(alias),
+      )
+    );
   }
 
   private progressWeight(entry: any) {
@@ -417,6 +707,8 @@ export class ClubsService {
       developpement: ['dev', 'development', 'programming', 'programmation'],
       programmation: ['programming', 'code', 'coding', 'java', 'python'],
       algorithmique: ['algorithme', 'algo', 'algorithm'],
+      web: ['javascript', 'typescript', 'html', 'css', 'frontend', 'backend'],
+      cloud: ['devops', 'docker', 'kubernetes', 'aws', 'azure'],
       reseaux: ['reseau', 'network', 'networking'],
       reseau: ['reseaux', 'network', 'networking'],
       electronique: ['electronics', 'embedded', 'embarque'],
@@ -430,6 +722,15 @@ export class ClubsService {
     };
 
     return aliases[keyword] || [keyword];
+  }
+
+  private tokenize(value?: string) {
+    return this.normalizeReference(value)
+      .split(/[^a-z0-9.+#]+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length > 2)
+      .flatMap((token) => [token, ...this.keywordAliases(token)])
+      .filter(Boolean);
   }
 
   private normalizeReference(value?: string) {

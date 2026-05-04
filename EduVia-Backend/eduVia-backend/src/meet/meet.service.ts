@@ -33,7 +33,12 @@ export class MeetService {
 
   async findReplays(audience?: 'student' | 'teacher') {
     await this.removeLegacySeedData();
-    const query: Record<string, unknown> = { replayUrl: /^https?:\/\//i };
+    const query: Record<string, unknown> = {
+      $or: [
+        { replayUrl: { $regex: /^https?:\/\//i } },
+        { status: 'ended', recordingEnabled: true },
+      ],
+    };
     if (audience === 'student' || audience === 'teacher') {
       query.audience = audience;
     }
@@ -73,6 +78,8 @@ export class MeetService {
 
     if (!session.replayUrl && session.recordingEnabled && process.env.MEET_REPLAY_BASE_URL) {
       session.replayUrl = this.replayUrl(session);
+    }
+    if (session.recordingEnabled) {
       session.replayTitle = session.replayTitle || session.title;
       session.replaySubject = session.replaySubject || session.topic;
       session.replayDuration = session.replayDuration || 'Video en cours de preparation';
