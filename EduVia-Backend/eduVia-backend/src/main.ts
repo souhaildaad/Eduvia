@@ -8,21 +8,28 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
+  // Body parsers
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+  // CORS : autorise le frontend Vercel et localhost pour tests
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:4200',
+    origin: [
+      process.env.FRONTEND_URL || 'http://localhost:4200',
+      'https://eduvia-frontend-ao1poyrs-mayarahachanis-projects.vercel.app'
+    ],
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
+  // Dossier uploads
   const uploadDir = join(process.cwd(), 'uploads');
   if (!existsSync(uploadDir)) {
     mkdirSync(uploadDir);
   }
 
+  // Servir les fichiers statiques uploadés
   app.use(
     '/uploads',
     express.static(uploadDir, {
@@ -40,6 +47,8 @@ async function bootstrap() {
     }),
   );
 
+  // Lancer l'application sur le PORT fourni par Render
   await app.listen(process.env.PORT ?? 3000);
 }
+
 bootstrap();
