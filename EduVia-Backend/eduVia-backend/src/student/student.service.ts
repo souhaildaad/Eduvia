@@ -480,6 +480,161 @@ export class StudentService {
     };
   }
 
+  async updateStudentLevel(
+    body: { level?: string; assessmentResult?: Record<string, unknown> },
+    userId?: string,
+    email?: string,
+  ) {
+    const student = await this.findConnectedStudentDocument(userId, email);
+    if (!student) {
+      throw new HttpException('Etudiant introuvable.', HttpStatus.NOT_FOUND);
+    }
+
+    const level = this.normalizeLevel(body?.level);
+    student.profileData = {
+      ...(student.profileData || {}),
+      level,
+      levelLabel: this.levelDisplayLabel(level),
+      levelUpdatedAt: new Date().toISOString(),
+      initialAssessmentCompleted: true,
+      initialAssessment:
+        body?.assessmentResult && typeof body.assessmentResult === 'object'
+          ? body.assessmentResult
+          : student.profileData?.initialAssessment || null,
+    };
+    await student.save();
+
+    return {
+      success: true,
+      level,
+      levelLabel: this.levelDisplayLabel(level),
+    };
+  }
+
+  async getPortfolioCourseSummary(
+    body: { courseId?: string; level?: string },
+    userId?: string,
+    email?: string,
+  ) {
+    const student = await this.findConnectedStudentProfile(userId, email);
+    if (!student) {
+      throw new HttpException('Session etudiant invalide.', HttpStatus.UNAUTHORIZED);
+    }
+
+    const normalizedClassName = this.normalizeClassName(student.className || '');
+    const requestedLevel = this.normalizeLevel(body?.level || student.profileData?.level);
+    const courseKey = this.normalizeContentReference(body?.courseId || '');
+    if (!courseKey) {
+      throw new HttpException('courseId obligatoire.', HttpStatus.BAD_REQUEST);
+    }
+
+    const allContents = (await this.contentService.findAll()).map(item =>
+      this.toPlainContent(item),
+    );
+    const teacherAssignedClassMap = await this.buildTeacherAssignedClassMap(allContents);
+    const teacherCourseAssignmentMap =
+      await this.buildTeacherCourseAssignmentMap(allContents);
+    const visibleContents = this.filterVisibleContentHierarchy(
+      allContents.filter(item =>
+        this.isContentInCurrentTeacherCourse(
+          item,
+          teacherCourseAssignmentMap,
+          normalizedClassName,
+        ),
+      ),
+      requestedLevel,
+      normalizedClassName,
+      teacherAssignedClassMap,
+    );
+    const courseContents = visibleContents.filter(
+      item => this.courseGroupKeyForPortfolio(item) === courseKey,
+    );
+
+    if (courseContents.length === 0) {
+      throw new HttpException('Cours introuvable dans votre espace.', HttpStatus.NOT_FOUND);
+    }
+
+    return this.buildPortfolioCourseSummary(courseContents, requestedLevel);
+  }
+
+  async generatePortfolioRemediationQuiz(
+    body: { acquis?: string; courseId?: string; chapterId?: string; level?: string },
+    userId?: string,
+    email?: string,
+  ) {
+    const student = await this.findConnectedStudentProfile(userId, email);
+    if (!student) {
+      throw new HttpException('Session etudiant invalide.', HttpStatus.UNAUTHORIZED);
+    }
+
+    const acquis = this.repairEncoding(String(body?.acquis || '')).trim();
+    const level = this.normalizeLevel(body?.level || student.profileData?.level);
+    const normalizedClassName = this.normalizeClassName(student.className || '');
+    const allContents = (await this.contentService.findAll()).map(item =>
+      this.toPlainContent(item),
+    );
+    const teacherAssignedClassMap = await this.buildTeacherAssignedClassMap(allContents);
+    const teacherCourseAssignmentMap =
+      await this.buildTeacherCourseAssignmentMap(allContents);
+    const visibleContents = this.filterVisibleContentHierarchy(
+      allContents.filter(item =>
+        this.isContentInCurrentTeacherCourse(
+          item,
+          teacherCourseAssignmentMap,
+          normalizedClassName,
+        ),
+      ),
+      level,
+      normalizedClassName,
+      teacherAssignedClassMap,
+    );
+    const remediationContents = this.findPortfolioRemediationContents(
+      visibleContents,
+      acquis,
+      body?.courseId || '',
+      body?.chapterId || '',
+    );
+    const source = await this.extractPortfolioCourseText(remediationContents);
+
+    try {
+      const generated = await this.generatePortfolioRemediationQuestionsWithHuggingFace({
+        acquis,
+        level,
+        documentText: source.documentText,
+        quizText: source.quizText,
+        courseId: remediationContents.find(item => item.courseId)?.courseId || body?.courseId || '',
+        chapterId: remediationContents.find(item => item.chapterId)?.chapterId || body?.chapterId || '',
+      });
+
+      return this.buildPortfolioRemediationQuizContent(
+        generated,
+        acquis,
+        remediationContents.find(item => item.courseId)?.courseId || body?.courseId || '',
+        remediationContents.find(item => item.chapterId)?.chapterId || body?.chapterId || '',
+        level,
+        'Hugging Face',
+      );
+    } catch (error) {
+      this.logger.warn(
+        `[PORTFOLIO REMEDIATION QUIZ] fallback local apres erreur: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return this.buildPortfolioRemediationQuizContent(
+        this.buildLocalPortfolioRemediationQuestionsFromSource(
+          acquis,
+          [source.documentText, source.quizText, source.metadataText].filter(Boolean).join(' '),
+          10,
+        ),
+        acquis,
+        remediationContents.find(item => item.courseId)?.courseId || body?.courseId || '',
+        remediationContents.find(item => item.chapterId)?.chapterId || body?.chapterId || '',
+        level,
+        'generation locale',
+      );
+    }
+  }
+
   async startFlashcardSession(
     body: { subject: string; difficulty?: string; questionCount?: number },
     userId?: string,
@@ -3382,6 +3537,951 @@ export class StudentService {
       .trim()
       .toUpperCase();
     return normalized ? `${normalized} Informatique` : 'Etudiant';
+  }
+
+  private courseGroupKeyForPortfolio(item: StudentContent) {
+    const value = item.courseId || item.title || '';
+    return this.normalizeContentReference(value) || 'cours';
+  }
+
+  private async buildPortfolioCourseSummary(contents: StudentContent[], level: StudentLevel) {
+    const courseTitle =
+      contents.find(item => this.isCourse(item))?.title ||
+      contents.find(item => item.courseId)?.courseId ||
+      contents[0]?.title ||
+      'Cours';
+    const documents = contents.filter(item => this.isDocument(item));
+    const quizzes = contents.filter(item => this.isQuiz(item));
+    const source = await this.extractPortfolioCourseText(contents);
+    const summarySourceText = [source.documentText, source.quizText].filter(Boolean).join(' ');
+    const fallbackSourceText = summarySourceText || source.metadataText;
+    const aiSummary = await this.generatePortfolioCourseSummaryWithHuggingFace({
+      courseTitle,
+      documentCount: documents.length,
+      quizCount: quizzes.length,
+      teacherName: contents.find(item => item.teacherName)?.teacherName || 'Teacher User',
+      level,
+      documentText: source.documentText,
+      quizText: source.quizText,
+    });
+
+    if (aiSummary) {
+      return aiSummary;
+    }
+
+    const notions = this.extractPortfolioNotions(
+      contents,
+      source.documentText,
+      source.quizText,
+      source.metadataText,
+    ).slice(0, 10);
+    const primaryNotion = notions[0]?.notion || courseTitle;
+
+    return {
+      courseTitle,
+      level: this.levelDisplayLabel(level),
+      resourceCount: documents.length,
+      quizCount: quizzes.length,
+      teacherName: contents.find(item => item.teacherName)?.teacherName || 'Teacher User',
+      overview:
+        this.buildPortfolioOverview(
+          courseTitle,
+          documents.length,
+          quizzes.length,
+          notions,
+          fallbackSourceText,
+          !!source.documentText,
+          !!source.quizText,
+        ),
+      notions,
+      details: notions.map((item, index) => ({
+        title: `${index + 1}. ${item.notion}`,
+        explanation:
+          `${item.notion} est une notion importante du cours ${courseTitle}. ${item.explanation}`,
+        bullets: [
+          item.explanation,
+          `Exemple ou usage: ${item.example}`,
+        ],
+      })),
+      nextActions: [
+        `Lire la fiche structuree puis revenir aux supports originaux du cours ${courseTitle}.`,
+        'Passer ou repasser le quiz du cours pour verifier la comprehension des notions expliquees.',
+        `Commencer la revision par ${primaryNotion}, puis expliquer cette notion avec un exemple.`,
+      ],
+      revisionPlan: notions.slice(0, 5).map((item, index) => ({
+        step: index + 1,
+        text: `Etape ${index + 1}: revoir ${item.notion} et noter les erreurs dans le portfolio.`,
+      })),
+      glossary: notions.map(item => `${item.notion}: ${item.explanation}`).slice(0, 8),
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  private async extractPortfolioCourseText(contents: StudentContent[]) {
+    const documentBlocks: string[] = [];
+    const quizBlocks: string[] = [];
+    const metadataBlocks: string[] = [];
+
+    for (const item of contents) {
+      const fileUrl = String(item.fileUrl || item.source || '').trim();
+      if (this.isDocument(item) && /\.(pdf|docx)$/i.test(fileUrl)) {
+        try {
+          const extracted = await this.extractStudentUploadText(fileUrl);
+          if (extracted && extracted.length >= 80) {
+            documentBlocks.push(extracted);
+          }
+        } catch (error) {
+          this.logger.warn(
+            `[PORTFOLIO SUMMARY] extraction ignoree file=${fileUrl} error=${String(error)}`,
+          );
+        }
+      }
+
+      if (this.isQuiz(item)) {
+        const quizText = this.extractPortfolioQuizText(item);
+        if (quizText) {
+          quizBlocks.push(quizText);
+        }
+      }
+
+      if ((this.isDocument(item) || this.isQuiz(item)) && item.description) {
+        metadataBlocks.push(String(item.description));
+      }
+    }
+
+    return {
+      documentText: this.compactWhitespace(documentBlocks.join(' ')).slice(0, 22000),
+      quizText: this.compactWhitespace(quizBlocks.join(' ')).slice(0, 9000),
+      metadataText: this.compactWhitespace(metadataBlocks.join(' ')).slice(0, 6000),
+    };
+  }
+
+  private extractPortfolioQuizText(item: StudentContent) {
+    const questions = Array.isArray(item.quizQuestions) ? item.quizQuestions : [];
+    if (questions.length === 0) {
+      return '';
+    }
+
+    const lines = questions.slice(0, 20).flatMap((question: any, index) => {
+      const prompt = this.repairEncoding(String(question?.prompt || '')).trim();
+      const explanation = this.repairEncoding(String(question?.explanation || '')).trim();
+      const correctAnswers = Array.isArray(question?.correctAnswers)
+        ? question.correctAnswers
+        : [];
+      const options = Array.isArray(question?.options) ? question.options : [];
+      const correctOptionTexts = options
+        .filter((option: any) => correctAnswers.includes(option?.label))
+        .map((option: any) => this.repairEncoding(String(option?.text || '')).trim())
+        .filter(Boolean);
+
+      return [
+        prompt ? `Question ${index + 1}: ${prompt}` : '',
+        correctOptionTexts.length ? `Reponse attendue: ${correctOptionTexts.join(', ')}` : '',
+        explanation ? `Explication: ${explanation}` : '',
+      ].filter(Boolean);
+    });
+
+    return this.compactWhitespace(lines.join(' '));
+  }
+
+  private async extractStudentUploadText(fileUrl: string) {
+    const relativePath = fileUrl.replace(/^\/+/, '').replace(/\//g, '\\');
+    const filePath = join(process.cwd(), relativePath);
+    const extension = extname(filePath).toLowerCase();
+
+    if (extension === '.pdf') {
+      const buffer = await readFile(filePath);
+      const parser = new PDFParse({ data: buffer });
+      const parsedPdf = await parser.getText();
+      const rawText = parsedPdf.text || '';
+      await parser.destroy();
+      return this.compactWhitespace(rawText);
+    }
+
+    if (extension === '.docx') {
+      const parsedDoc = await mammoth.extractRawText({ path: filePath });
+      return this.compactWhitespace(parsedDoc.value || '');
+    }
+
+    return '';
+  }
+
+  private async generatePortfolioCourseSummaryWithHuggingFace(input: {
+    courseTitle: string;
+    documentCount: number;
+    quizCount: number;
+    teacherName: string;
+    level: StudentLevel;
+    documentText: string;
+    quizText: string;
+  }) {
+    const apiKey = this.configService.get<string>('HUGGINGFACE_API_KEY');
+    const model =
+      this.configService.get<string>('HUGGINGFACE_SUMMARY_MODEL') ||
+      this.configService.get<string>('HUGGINGFACE_QUIZ_MODEL') ||
+      'Qwen/Qwen2.5-7B-Instruct';
+    const sourceText = this.compactWhitespace([
+      input.documentText ? `DOCUMENTS DU COURS:\n${input.documentText}` : '',
+      input.quizText ? `QUIZ DU COURS:\n${input.quizText}` : '',
+    ].filter(Boolean).join('\n\n')).slice(0, 18000);
+
+    if (!apiKey || sourceText.length < 80) {
+      return null;
+    }
+
+    const prompt = [
+      `Tu generes le resume automatique Portfolio du cours "${input.courseTitle}" pour EduVia.`,
+      'Utilise uniquement le texte extrait des documents PDF/DOCX et les quiz fournis ci-dessous.',
+      'Ignore totalement les videos, les titres generiques de ressources et les noms comme "Partie 1", "Video ajoutee", "Document de cours ajoute" si le contenu reel ne les explique pas.',
+      'Produis un resume detaille, dynamique et specifique au contenu. Ne recopie pas un template statique.',
+      'Retourne uniquement un JSON valide, sans markdown, avec cette forme exacte:',
+      '{"overview":"...","notions":[{"notion":"...","explanation":"...","importance":"...","example":"..."}],"details":[{"title":"1. ...","explanation":"...","bullets":["...","..."]}],"nextActions":["...","...","..."],"revisionPlan":[{"step":1,"text":"..."}],"glossary":["terme: definition"]}',
+      'Contraintes: 6 a 10 notions, 6 a 10 details, 3 actions, 5 etapes de revision, 6 a 10 entrees de glossaire. Langue francaise simple. Chaque notion doit venir du contenu document/quiz.',
+      `Niveau etudiant: ${this.levelDisplayLabel(input.level)}.`,
+      `Contenu a analyser:\n${sourceText}`,
+    ].join('\n');
+
+    try {
+      const response = await this.fetchHuggingFaceChatWithTimeout({
+        apiKey,
+        model,
+        timeoutMs: 12000,
+        messages: [
+          {
+            role: 'system',
+            content:
+              'Tu es un assistant pedagogique. Tu reponds uniquement en JSON valide pour alimenter une interface Portfolio.',
+          },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.25,
+        maxTokens: 1800,
+      });
+
+      const details = await response.text();
+      if (!response.ok) {
+        this.logger.warn(
+          `[PORTFOLIO SUMMARY HF] generation failed status=${response.status} details=${details.slice(0, 500)}`,
+        );
+        return null;
+      }
+
+      const payload = JSON.parse(details);
+      const rawContent = String(payload?.choices?.[0]?.message?.content || '').trim();
+      const jsonPayload = this.parsePortfolioSummaryJson(rawContent);
+      return this.normalizePortfolioAiSummary(jsonPayload, input);
+    } catch (error) {
+      this.logger.warn(
+        `[PORTFOLIO SUMMARY HF] fallback local apres erreur: ${String(error)}`,
+      );
+      return null;
+    }
+  }
+
+  private parsePortfolioSummaryJson(rawContent: string) {
+    const cleaned = rawContent
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```$/i, '')
+      .trim();
+
+    try {
+      return JSON.parse(cleaned);
+    } catch (_error) {
+      const match = cleaned.match(/\{[\s\S]*\}/);
+      if (!match) {
+        return null;
+      }
+      try {
+        return JSON.parse(match[0]);
+      } catch (_nestedError) {
+        return null;
+      }
+    }
+  }
+
+  private normalizePortfolioAiSummary(payload: any, input: {
+    courseTitle: string;
+    documentCount: number;
+    quizCount: number;
+    teacherName: string;
+    level: StudentLevel;
+  }) {
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    const notions = Array.isArray(payload.notions)
+      ? payload.notions
+          .map((item: any) => ({
+            notion: this.cleanPortfolioNotion(String(item?.notion || '')),
+            explanation: this.compactWhitespace(String(item?.explanation || '')).slice(0, 360),
+            importance: this.compactWhitespace(String(item?.importance || '')).slice(0, 260),
+            example: this.compactWhitespace(String(item?.example || '')).slice(0, 220),
+          }))
+          .filter((item: any) => item.notion && item.explanation)
+          .slice(0, 10)
+      : [];
+
+    if (notions.length < 3) {
+      return null;
+    }
+
+    const details = Array.isArray(payload.details)
+      ? payload.details
+          .map((item: any, index: number) => ({
+            title: this.compactWhitespace(String(item?.title || `${index + 1}. ${notions[index]?.notion || input.courseTitle}`)).slice(0, 100),
+            explanation: this.compactWhitespace(String(item?.explanation || notions[index]?.explanation || '')).slice(0, 520),
+            bullets: Array.isArray(item?.bullets)
+              ? item.bullets.map((bullet: any) => this.compactWhitespace(String(bullet || '')).slice(0, 220)).filter(Boolean).slice(0, 4)
+              : [notions[index]?.importance, notions[index]?.example].filter(Boolean),
+          }))
+          .filter((item: any) => item.title && item.explanation)
+          .slice(0, 10)
+      : notions.map((item, index) => ({
+          title: `${index + 1}. ${item.notion}`,
+          explanation: item.explanation,
+          bullets: [item.importance, item.example].filter(Boolean),
+        }));
+
+    const nextActions = this.normalizePortfolioStringList(payload.nextActions, [
+      `Relire les documents du cours ${input.courseTitle} en ciblant les notions du tableau.`,
+      'Refaire le quiz associe pour verifier la comprehension.',
+      `Commencer la revision par ${notions[0]?.notion || input.courseTitle}.`,
+    ], 3);
+
+    const revisionPlan = Array.isArray(payload.revisionPlan)
+      ? payload.revisionPlan
+          .map((item: any, index: number) => ({
+            step: Number(item?.step) || index + 1,
+            text: this.compactWhitespace(String(item?.text || '')).slice(0, 220),
+          }))
+          .filter((item: any) => item.text)
+          .slice(0, 5)
+      : notions.slice(0, 5).map((item, index) => ({
+          step: index + 1,
+          text: `Revoir ${item.notion}, puis refaire une question du quiz liee a cette notion.`,
+        }));
+
+    const glossary = this.normalizePortfolioStringList(
+      payload.glossary,
+      notions.map(item => `${item.notion}: ${item.explanation}`),
+      8,
+    );
+
+    return {
+      courseTitle: input.courseTitle,
+      level: this.levelDisplayLabel(input.level),
+      resourceCount: input.documentCount,
+      quizCount: input.quizCount,
+      teacherName: input.teacherName,
+      overview:
+        this.compactWhitespace(String(payload.overview || '')).slice(0, 900) ||
+        `Ce resume du cours ${input.courseTitle} est genere par Hugging Face a partir des documents et quiz du cours. Les videos ne sont pas incluses.`,
+      notions,
+      details,
+      nextActions,
+      revisionPlan,
+      glossary,
+      generatedAt: new Date().toISOString(),
+      source: 'huggingface',
+    };
+  }
+
+  private normalizePortfolioStringList(value: unknown, fallback: string[], limit: number) {
+    const source = Array.isArray(value) ? value : fallback;
+    const normalized = source
+      .map(item => this.compactWhitespace(String(item || '')).slice(0, 260))
+      .filter(Boolean)
+      .slice(0, limit);
+
+    return normalized.length > 0 ? normalized : fallback.slice(0, limit);
+  }
+
+  private async fetchHuggingFaceChatWithTimeout(input: {
+    apiKey: string;
+    model: string;
+    messages: Array<{ role: string; content: string }>;
+    timeoutMs: number;
+    temperature: number;
+    maxTokens: number;
+  }) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
+    try {
+      return await fetch('https://router.huggingface.co/v1/chat/completions', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${input.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: input.model,
+          messages: input.messages,
+          temperature: input.temperature,
+          max_tokens: input.maxTokens,
+        }),
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private findPortfolioRemediationContents(
+    contents: StudentContent[],
+    acquis: string,
+    courseId: string,
+    chapterId: string,
+  ) {
+    const weakKey = this.normalizeContentReference(acquis);
+    const courseKey = this.normalizeContentReference(courseId);
+    const chapterKey = this.normalizeContentReference(chapterId);
+    const sourceItems = contents.filter(item => this.isDocument(item) || this.isQuiz(item));
+
+    const directMatches = sourceItems.filter(item => {
+      const haystack = [
+        item.courseId,
+        item.chapterId,
+        item.partId,
+        item.title,
+        item.description,
+      ].map(value => this.normalizeContentReference(value || '')).join(' ');
+
+      return (
+        (!!weakKey && haystack.includes(weakKey)) ||
+        (!!courseKey && haystack.includes(courseKey)) ||
+        (!!chapterKey && haystack.includes(chapterKey))
+      );
+    });
+
+    return directMatches.length > 0 ? directMatches : sourceItems;
+  }
+
+  private async generatePortfolioRemediationQuestionsWithHuggingFace(input: {
+    acquis: string;
+    level: StudentLevel;
+    documentText: string;
+    quizText: string;
+    courseId: string;
+    chapterId: string;
+  }) {
+    const apiKey = this.configService.get<string>('HUGGINGFACE_API_KEY');
+    const model =
+      this.configService.get<string>('HUGGINGFACE_QUIZ_MODEL') ||
+      'Qwen/Qwen2.5-7B-Instruct';
+    const sourceText = this.compactWhitespace([
+      input.documentText ? `DOCUMENTS:\n${input.documentText}` : '',
+      input.quizText ? `QUIZ EXISTANTS:\n${input.quizText}` : '',
+    ].filter(Boolean).join('\n\n')).slice(0, 14000);
+
+    if (!apiKey || sourceText.length < 80) {
+      return this.buildLocalPortfolioRemediationQuestionsFromSource(input.acquis, sourceText, 10);
+    }
+
+    const prompt = [
+      `Genere un quiz de remediation EduVia sur l'acquis faible "${input.acquis}".`,
+      'Utilise uniquement le contenu reel fourni: documents et quiz existants du parcours. Ignore les videos.',
+      'Les 10 questions doivent etre liees a la matiere/acquis, sans repetition, et de bonne qualite pedagogique.',
+      'Chaque question a 4 options A, B, C, D, une seule bonne reponse et une explication courte.',
+      'Retourne uniquement ce JSON valide: {"questions":[{"id":"q1","prompt":"...","type":"single","options":[{"label":"A","text":"..."},{"label":"B","text":"..."},{"label":"C","text":"..."},{"label":"D","text":"..."}],"correctAnswers":["A"],"explanation":"..."}]}',
+      `Niveau: ${this.levelDisplayLabel(input.level)}. Cours: ${input.courseId || 'parcours'}. Chapitre: ${input.chapterId || input.acquis}.`,
+      `Contenu:\n${sourceText}`,
+    ].join('\n');
+
+    const response = await this.fetchHuggingFaceChatWithTimeout({
+      apiKey,
+      model,
+      timeoutMs: 15000,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Tu crees uniquement des quiz JSON valides, sans markdown, sans texte hors JSON.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.35,
+      maxTokens: 1800,
+    });
+    const details = await response.text();
+    if (!response.ok) {
+      throw new Error(`Hugging Face remediation failed ${response.status}: ${details.slice(0, 300)}`);
+    }
+
+    const payload = JSON.parse(details);
+    const rawContent = String(payload?.choices?.[0]?.message?.content || '').trim();
+    const parsed = this.parsePortfolioSummaryJson(rawContent);
+    const questions = Array.isArray(parsed?.questions) ? parsed.questions : [];
+    const normalized = this.normalizePortfolioRemediationQuestions(questions, input.acquis);
+    return normalized.length >= 6
+      ? normalized
+      : this.buildLocalPortfolioRemediationQuestionsFromSource(input.acquis, sourceText, 10);
+  }
+
+  private normalizePortfolioRemediationQuestions(questions: any[], acquis: string) {
+    const seen = new Set<string>();
+    return questions
+      .map((question, index) => ({
+        id: String(question?.id || `portfolio-remediation-${index + 1}`),
+        prompt: this.compactWhitespace(String(question?.prompt || '')).slice(0, 260),
+        type: 'single',
+        options: Array.isArray(question?.options)
+          ? question.options.slice(0, 4).map((option: any, optionIndex: number) => ({
+              label: String(option?.label || String.fromCharCode(65 + optionIndex)).slice(0, 1).toUpperCase(),
+              text: this.compactWhitespace(String(option?.text || '')).slice(0, 180),
+            }))
+          : [],
+        correctAnswers: Array.isArray(question?.correctAnswers)
+          ? question.correctAnswers.slice(0, 1)
+          : ['A'],
+        explanation:
+          this.compactWhitespace(String(question?.explanation || '')).slice(0, 240) ||
+          `Question ciblee sur ${acquis}.`,
+      }))
+      .filter(question => question.prompt && question.options.length === 4)
+      .filter(question => {
+        const key = this.normalizeContentReference(question.prompt);
+        if (!key || seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 10);
+  }
+
+  private buildPortfolioOverview(
+    courseTitle: string,
+    resourceCount: number,
+    quizCount: number,
+    notions: Array<{ notion: string }>,
+    sourceText: string,
+    hasReadableDocuments: boolean,
+    hasQuizText: boolean,
+  ) {
+    const firstSentences = this.extractPortfolioSentences(sourceText, hasReadableDocuments || hasQuizText).slice(0, 4).join(' ');
+    const notionsLabel = notions.map(item => item.notion).slice(0, 6).join(', ');
+
+    return this.compactWhitespace(
+      [
+        hasReadableDocuments
+          ? `Ce resume du cours ${courseTitle} est genere a partir du texte reel des documents publies par l'enseignant.`
+          : `Ce resume du cours ${courseTitle} utilise les quiz existants et les informations disponibles car aucun texte lisible n'a ete extrait des documents.`,
+        `EduVia a analyse ${resourceCount} document(s) et ${quizCount} quiz lie(s). Les videos ne sont pas incluses dans ce resume.`,
+        firstSentences || `Les notions principales detectees sont ${notionsLabel || courseTitle}.`,
+        `Lis d'abord la vue d'ensemble, puis utilise le tableau de synthese pour verifier chaque notion avec son usage concret.`,
+      ].join(' '),
+    );
+  }
+
+  private extractPortfolioNotions(
+    contents: StudentContent[],
+    documentText: string,
+    quizText: string,
+    metadataText: string,
+  ) {
+    const readableSourceText = this.compactWhitespace([documentText, quizText].filter(Boolean).join(' '));
+    const textCandidates = this.extractPortfolioSentences(readableSourceText, true)
+      .map(sentence => this.buildPortfolioNotionFromSentence(sentence))
+      .filter((item): item is NonNullable<typeof item> => !!item);
+
+    const uniqueTextCandidates = this.uniquePortfolioNotions([
+      ...textCandidates,
+      ...this.buildPortfolioConceptsFromText(readableSourceText),
+    ]);
+
+    if (readableSourceText) {
+      return uniqueTextCandidates;
+    }
+
+    const metadataCandidates = this.extractPortfolioSentences(metadataText, false)
+      .map(sentence => this.buildPortfolioNotionFromSentence(sentence))
+      .filter((item): item is NonNullable<typeof item> => !!item);
+    if (metadataCandidates.length >= 4) {
+      return this.uniquePortfolioNotions(metadataCandidates);
+    }
+
+    const candidates = contents
+      .filter(item => this.isDocument(item) || this.isQuiz(item))
+      .flatMap(item => [
+        item.title,
+        item.description,
+      ])
+      .map(value => this.repairEncoding(String(value || '')).trim())
+      .filter(value => value.length >= 3);
+    const unique = [...new Set(candidates)]
+      .map(value => value.replace(/\.(pdf|docx|mp4)$/i, '').trim())
+      .filter(Boolean);
+
+    return unique.map((value, index) => ({
+      notion: this.compactWhitespace(value).slice(0, 70),
+      explanation:
+        index === 0
+          ? `Elle donne la vue d'ensemble necessaire pour comprendre le reste du cours.`
+          : `Elle relie les supports du cours a une competence concrete a maitriser.`,
+      importance:
+        `Savoir expliquer ${this.compactWhitespace(value).slice(0, 45)} et l'appliquer dans une situation concrete.`,
+      example:
+        `Associer ${this.compactWhitespace(value).slice(0, 45)} a un exercice, un document ou un quiz du cours.`,
+    }));
+  }
+
+  private extractPortfolioSentences(sourceText: string, fromDocument = false) {
+    const normalizedText = this.compactWhitespace(sourceText);
+    const sentenceLikeParts = normalizedText
+      .split(/(?<=[.!?])\s+|(?:\s{2,})|(?:\s[-•]\s)|(?:\n+)/)
+      .flatMap(part => this.splitLongPortfolioSentence(part));
+
+    return sentenceLikeParts
+      .map(sentence => this.compactWhitespace(sentence))
+      .filter(sentence => sentence.length >= (fromDocument ? 55 : 35) && sentence.length <= 360)
+      .filter(sentence => !/^(document|quiz|titre|description|chapitre|partie)\s*:/i.test(sentence))
+      .filter(sentence => !/\b(video ajoutee|document de cours ajoute|ressource)\b/i.test(sentence))
+      .slice(0, 80);
+  }
+
+  private splitLongPortfolioSentence(value: string) {
+    const text = this.compactWhitespace(value);
+    if (text.length <= 360) {
+      return [text];
+    }
+
+    const chunks: string[] = [];
+    for (let index = 0; index < text.length; index += 260) {
+      chunks.push(text.slice(index, index + 320));
+    }
+    return chunks;
+  }
+
+  private buildPortfolioNotionFromSentence(sentence: string) {
+    const cleanedSentence = this.cleanPortfolioSourceSentence(this.repairEncoding(sentence));
+    const definitionMatch = cleanedSentence.match(
+      /^(.{4,70}?)\s+(?:est|sont|designe|correspond a|consiste en|permet de|sert a)\s+(.{12,180})/i,
+    );
+    const rawNotion = definitionMatch?.[1] || this.extractPortfolioKeyword(cleanedSentence);
+    const notion = this.cleanPortfolioNotion(rawNotion);
+    if (!notion) {
+      return null;
+    }
+
+    return {
+      notion,
+      explanation: cleanedSentence,
+      importance: `Savoir expliquer ${notion} et l'appliquer dans une situation concrete du cours.`,
+      example: this.compactWhitespace(definitionMatch?.[2] || cleanedSentence).slice(0, 180),
+    };
+  }
+
+  private uniquePortfolioNotions(items: Array<{
+    notion: string;
+    explanation: string;
+    importance: string;
+    example: string;
+  }>) {
+    const seen = new Set<string>();
+    return items.filter(item => {
+      const key = this.normalizeContentReference(item.notion);
+      if (!key || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private extractPortfolioKeywordLegacy(sentence: string) {
+    const match = sentence.match(/\b[A-ZÀ-Ö][A-Za-zÀ-ÿ0-9'-]{3,}(?:\s+[A-Za-zÀ-ÿ0-9'-]{3,}){0,3}/);
+    return match?.[0] || '';
+  }
+
+  private extractPortfolioKeyword(sentence: string) {
+    const cleaned = this.cleanPortfolioSourceSentence(sentence);
+    const codeLike = cleaned.match(/\b(?:langage\s+C|programme\s+C|fonction\s+main|chaine\s+de\s+caracteres|mots\s+reserves|bibliotheque\s+standard|compilateur\s+C|instruction\s+return|boucle\s+for|boucle\s+while|structure\s+d[' ]un\s+programme)\b/i);
+    if (codeLike?.[0]) {
+      return codeLike[0];
+    }
+
+    const importantPhrase = cleaned.match(
+      /\b(?:algorithme|reseau|base de donnees|programmation|programme|fonction|variable|commentaire|compilateur|instruction|condition|boucle|tableau|structure|classe|objet|requete|serveur|client|composant|service|controller|endpoint|projet|complexite|graphe|quiz|question)\b(?:\s+(?:de|du|des|d'|en|a|avec|sans|pour|sur)\s+\w{3,}){0,2}/i,
+    );
+    if (importantPhrase?.[0]) {
+      return importantPhrase[0];
+    }
+
+    const tokens = cleaned
+      .split(/[^A-Za-z0-9]+/)
+      .map(token => token.trim())
+      .filter(token => token.length >= 4)
+      .filter(token => !this.isPortfolioStopword(token));
+
+    return tokens.slice(0, 3).join(' ');
+  }
+
+  private cleanPortfolioSourceSentence(value: string) {
+    return this.compactWhitespace(value)
+      .replace(/^(?:question\s+\d+\s*:|reponse attendue\s*:|explication\s*:)\s*/i, '')
+      .replace(/^(?:document|quiz)\s+[^.]{1,90}\.\s*/i, '')
+      .replace(/\b(video ajoutee|ressource|document de cours ajoute)\b/gi, '')
+      .trim();
+  }
+
+  private buildPortfolioConceptsFromText(sourceText: string) {
+    const cleanedSource = this.cleanPortfolioSourceSentence(sourceText);
+    if (!cleanedSource) {
+      return [];
+    }
+
+    const sentences = this.extractPortfolioSentences(cleanedSource, true);
+    const terms = this.extractPortfolioTerms(cleanedSource).slice(0, 12);
+
+    return terms.map(term => {
+      const matchingSentence =
+        sentences.find(sentence => this.normalizeText(sentence).includes(this.normalizeText(term))) ||
+        `Le cours explique ${term} a travers les documents et les questions de quiz disponibles.`;
+
+      return {
+        notion: this.cleanPortfolioNotion(term),
+        explanation: this.compactWhitespace(matchingSentence).slice(0, 260),
+        importance: `Savoir expliquer ${term} et l'utiliser dans les exercices ou quiz du cours.`,
+        example: `Reprendre un passage du document ou une question du quiz qui utilise ${term}.`,
+      };
+    }).filter(item => item.notion);
+  }
+
+  private extractPortfolioTerms(sourceText: string) {
+    const normalizedForPatterns = this.compactWhitespace(sourceText);
+    const patternTerms = [
+      'langage C',
+      'programme C',
+      'structure du programme',
+      'fonction main',
+      'chaine de caracteres',
+      'mots reserves',
+      'commentaire',
+      'compilateur',
+      'bibliotheque',
+      'instruction return',
+      'boucle for',
+      'boucle while',
+      'variable',
+      'algorithme',
+      'complexite',
+      'base de donnees',
+      'requete SQL',
+      'reseau',
+      'composant',
+      'service',
+      'controller',
+      'Spring Boot',
+      'Angular',
+      'React',
+      'Python',
+      'Java',
+    ].filter(term => new RegExp(`\\b${term.replace(/\s+/g, '\\s+')}\\b`, 'i').test(normalizedForPatterns));
+
+    const frequencies = new Map<string, number>();
+    normalizedForPatterns
+      .replace(/[^\w\s'-]/g, ' ')
+      .split(/\s+/)
+      .map(token => token.trim())
+      .filter(token => token.length >= 4)
+      .filter(token => !this.isPortfolioStopword(token))
+      .forEach(token => {
+        const label = token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+        frequencies.set(label, (frequencies.get(label) || 0) + 1);
+      });
+
+    const frequentTerms = Array.from(frequencies.entries())
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .map(([term]) => term)
+      .filter(term => !/^(partie|chapitre|document|video)$/i.test(term));
+
+    return [...new Set([...patternTerms, ...frequentTerms])];
+  }
+
+  private isPortfolioStopword(value: string) {
+    const normalized = this.normalizeText(value);
+    return new Set([
+      'avec',
+      'ainsi',
+      'alors',
+      'apres',
+      'avant',
+      'avoir',
+      'bien',
+      'cette',
+      'celui',
+      'comme',
+      'cours',
+      'dans',
+      'dont',
+      'elle',
+      'elles',
+      'entre',
+      'etre',
+      'font',
+      'leur',
+      'leurs',
+      'lors',
+      'mais',
+      'meme',
+      'pour',
+      'plus',
+      'puis',
+      'quand',
+      'quel',
+      'quelle',
+      'reste',
+      'sont',
+      'sous',
+      'tout',
+      'tous',
+      'tres',
+      'utilise',
+      'vers',
+      'votre',
+      'vous',
+    ]).has(normalized);
+  }
+
+  private cleanPortfolioNotion(value: string) {
+    const cleaned = this.compactWhitespace(value)
+      .replace(/^(le|la|les|un|une|des|du|de|d')\s+/i, '')
+      .replace(/[:;,.]+$/g, '')
+      .slice(0, 70);
+    if (cleaned.length < 3 || /^(titre|description|chapitre|partie)$/i.test(cleaned)) {
+      return '';
+    }
+    return cleaned;
+  }
+
+  private buildPortfolioRemediationQuizContent(
+    questions: any[],
+    acquis: string,
+    courseId: string,
+    chapterId: string,
+    level: StudentLevel,
+    providerLabel: string,
+  ) {
+    const seenPrompts = new Set<string>();
+    const normalizedQuestions = questions.map((question, index) => ({
+      id: String(question?.id || `portfolio-remediation-${index + 1}`),
+      prompt: this.repairEncoding(String(question?.prompt || '')).trim(),
+      type: 'single',
+      options: Array.isArray(question?.options)
+        ? question.options.slice(0, 4)
+        : [],
+      correctAnswers: Array.isArray(question?.correctAnswers)
+        ? question.correctAnswers.slice(0, 1)
+        : ['A'],
+      explanation:
+        this.repairEncoding(String(question?.explanation || '')).trim() ||
+        `Question ciblee sur ${acquis || 'un acquis faible'}.`,
+    })).filter(question => question.prompt && question.options.length === 4)
+      .filter(question => {
+        const key = this.normalizeContentReference(question.prompt);
+        if (!key || seenPrompts.has(key)) {
+          return false;
+        }
+        seenPrompts.add(key);
+        return true;
+      })
+      .slice(0, 10);
+
+    return {
+      _id: `portfolio-remediation-${Date.now()}`,
+      type: 'quiz',
+      title: `Renforcer l'acquis ${acquis || 'cible'}`,
+      description: `Quiz cible genere par ${providerLabel} a partir du contenu reel du cours.`,
+      courseId,
+      chapterId,
+      quizMode: 'portfolio-remediation',
+      quizDifficulty: this.levelDisplayLabel(level),
+      quizDurationMinutes: 10,
+      quizAttempts: 5,
+      quizPassingScore: 70,
+      quizQuestionCount: normalizedQuestions.length,
+      quizQuestions: normalizedQuestions,
+      isActive: true,
+      focusLabels: [acquis].filter(Boolean),
+      focusKeywords: [acquis, courseId, chapterId].filter(Boolean),
+      recommendationScore: 999,
+      recommendationReason: `Quiz cible sur ${acquis || 'vos acquis faibles'} genere pour mettre a jour votre portfolio.`,
+    };
+  }
+
+  private buildLocalPortfolioRemediationQuestions(acquis: string, count: number) {
+    const label = this.repairEncoding(acquis || 'la notion cible').trim();
+    return Array.from({ length: count }, (_value, index) => ({
+      id: `local-portfolio-remediation-${index + 1}`,
+      prompt:
+        index % 2 === 0
+          ? `Quelle action aide a renforcer ${label} ?`
+          : `Comment verifier une vraie comprehension de ${label} ?`,
+      type: 'single',
+      options: [
+        {
+          label: 'A',
+          text:
+            index % 2 === 0
+              ? `Relire le support qui explique directement ${label}, puis refaire un exercice cible`
+              : `Expliquer ${label} avec ses propres mots puis l'appliquer`,
+        },
+        { label: 'B', text: 'Repondre au hasard sans consulter le feedback' },
+        { label: 'C', text: 'Ignorer les erreurs precedentes' },
+        { label: 'D', text: 'Changer uniquement le titre du chapitre' },
+      ],
+      correctAnswers: ['A'],
+      explanation: `Cette question cible ${label} d'apres les acquis faibles detectes.`,
+    }));
+  }
+
+  private buildLocalPortfolioRemediationQuestionsFromSource(acquis: string, sourceText: string, count: number) {
+    const label = this.repairEncoding(acquis || 'la notion cible').trim();
+    const notions = this.extractPortfolioNotions([], sourceText, '', '')
+      .map(item => item.notion)
+      .filter(Boolean)
+      .filter(item => this.normalizeContentReference(item) !== this.normalizeContentReference(label))
+      .slice(0, Math.max(3, count));
+    const targets = [label, ...notions].filter(Boolean);
+
+    return Array.from({ length: count }, (_value, index) => {
+      const target = targets[index % targets.length] || label;
+      const variants = [
+        {
+          prompt: `Quelle affirmation explique correctement ${target} dans ce cours ?`,
+          correct: `Une notion a relier au contenu du cours et a appliquer dans un exercice`,
+        },
+        {
+          prompt: `Quelle action permet de consolider ${target} apres une erreur ?`,
+          correct: `Revoir le passage du document puis refaire une question ciblee`,
+        },
+        {
+          prompt: `Comment verifier que ${target} est vraiment compris ?`,
+          correct: `L'expliquer avec ses propres mots puis l'utiliser dans un exemple`,
+        },
+        {
+          prompt: `Pourquoi ${target} est important pour progresser dans la matiere ?`,
+          correct: `Parce qu'il sert a resoudre les activites et quiz lies au cours`,
+        },
+      ];
+      const variant = variants[index % variants.length];
+
+      return {
+        id: `local-portfolio-remediation-${index + 1}`,
+        prompt: variant.prompt,
+        type: 'single',
+        options: [
+          { label: 'A', text: variant.correct },
+          { label: 'B', text: 'Repondre au hasard sans lire le document' },
+          { label: 'C', text: 'Ignorer le feedback des quiz precedents' },
+          { label: 'D', text: 'Changer uniquement le nom du chapitre' },
+        ],
+        correctAnswers: ['A'],
+        explanation: `Cette question cible ${target} a partir du contenu disponible dans le parcours.`,
+      };
+    });
   }
 
   private normalizeLevel(level?: string): StudentLevel {

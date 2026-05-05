@@ -23,7 +23,22 @@ async function bootstrap() {
     mkdirSync(uploadDir);
   }
 
-  app.useStaticAssets(uploadDir, { prefix: '/uploads/' });
+  app.use(
+    '/uploads',
+    express.static(uploadDir, {
+      acceptRanges: true,
+      setHeaders: (res, filePath) => {
+        const extension = filePath.split('.').pop()?.toLowerCase();
+        if (extension === 'pdf') {
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Disposition', 'inline');
+        }
+        if (['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(extension || '')) {
+          res.setHeader('Accept-Ranges', 'bytes');
+        }
+      },
+    }),
+  );
 
   await app.listen(process.env.PORT ?? 3000);
 }

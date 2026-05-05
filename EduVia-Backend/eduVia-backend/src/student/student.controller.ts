@@ -61,6 +61,52 @@ export class StudentController {
     );
   }
 
+  @Post('level')
+  updateLevel(
+    @Body()
+    body: {
+      level: string;
+      assessmentResult?: Record<string, unknown>;
+    },
+    @Request() req: any,
+  ) {
+    return this.studentService.updateStudentLevel(
+      body,
+      req.user?.userId,
+      req.user?.email,
+    );
+  }
+
+  @Post('portfolio/course-summary')
+  getPortfolioCourseSummary(
+    @Body() body: { courseId?: string; level?: string },
+    @Request() req: any,
+  ) {
+    return this.studentService.getPortfolioCourseSummary(
+      body,
+      req.user?.userId,
+      req.user?.email,
+    );
+  }
+
+  @Post('portfolio/remediation-quiz')
+  generatePortfolioRemediationQuiz(
+    @Body()
+    body: {
+      acquis?: string;
+      courseId?: string;
+      chapterId?: string;
+      level?: string;
+    },
+    @Request() req: any,
+  ) {
+    return this.studentService.generatePortfolioRemediationQuiz(
+      body,
+      req.user?.userId,
+      req.user?.email,
+    );
+  }
+
   @Post('progress')
   updateProgress(
     @Body()

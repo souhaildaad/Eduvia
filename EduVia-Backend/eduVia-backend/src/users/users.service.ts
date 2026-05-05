@@ -1602,6 +1602,9 @@ export class UsersService {
       address: profileData.address || '',
       bio: profileData.bio || '',
       avatarDataUrl: profileData.avatarDataUrl || '',
+      level: profileData.level || 'debutant',
+      initialAssessmentCompleted: profileData.initialAssessmentCompleted === true,
+      initialAssessment: profileData.initialAssessment || null,
       faceIdEnabled: !!profileData.faceIdHash,
     };
   }
