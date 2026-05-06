@@ -1,0 +1,63 @@
+pipeline {
+    agent any
+
+    tools {
+        nodejs 'node20'
+    }
+
+    environment {
+        SONARQUBE = 'SonarQube'
+    }
+
+    stages {
+        stage('Clone') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                dir('backend') {
+                    sh 'npm install'
+                }
+            }
+        }
+
+        stage('Unit Tests + Coverage') {
+            steps {
+                dir('backend') {
+                    sh 'npm run test:cov'
+                }
+            }
+        }
+
+        stage('Build Backend') {
+            steps {
+                dir('backend') {
+                    sh 'npm run build'
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                dir('backend') {
+                    withSonarQubeEnv("${SONARQUBE}") {
+                        sh 'sonar-scanner'
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            build job: 'CD-BACKEND', wait: false
+        }
+
+        failure {
+            echo 'CI Backend failed. CD Backend will not start.'
+        }
+    }
+}
