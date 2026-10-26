@@ -5,31 +5,31 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://eduvia-backend.onrender.com/api/:path*"
+      "destination": "https://eduvia-backend-4iqm.onrender.com/api/:path*"
     },
     {
       "source": "/auth/:path*",
-      "destination": "https://eduvia-backend.onrender.com/auth/:path*"
+      "destination": "https://eduvia-backend-4iqm.onrender.com/auth/:path*"
     },
     {
       "source": "/notifications/:path*",
-      "destination": "https://eduvia-backend.onrender.com/notifications/:path*"
+      "destination": "https://eduvia-backend-4iqm.onrender.com/notifications/:path*"
     },
     {
       "source": "/notifications",
-      "destination": "https://eduvia-backend.onrender.com/notifications"
+      "destination": "https://eduvia-backend-4iqm.onrender.com/notifications"
     },
     {
       "source": "/ai/:path*",
-      "destination": "https://eduvia-backend.onrender.com/ai/:path*"
+      "destination": "https://eduvia-backend-4iqm.onrender.com/ai/:path*"
     },
     {
       "source": "/uploads/:path*",
-      "destination": "https://eduvia-backend.onrender.com/uploads/:path*"
+      "destination": "https://eduvia-backend-4iqm.onrender.com/uploads/:path*"
     },
     {
       "source": "/health/:path*",
-      "destination": "https://eduvia-backend.onrender.com/health/:path*"
+      "destination": "https://eduvia-backend-4iqm.onrender.com/health/:path*"
     },
     {
       "source": "/(.*)",

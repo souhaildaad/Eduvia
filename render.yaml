@@ -32,19 +32,19 @@ services:
     routes:
       - type: rewrite
         source: /api/*
-        destination: https://eduvia-backend.onrender.com/api/*
+        destination: https://eduvia-backend-4iqm.onrender.com/api/*
       - type: rewrite
         source: /auth/*
-        destination: https://eduvia-backend.onrender.com/auth/*
+        destination: https://eduvia-backend-4iqm.onrender.com/auth/*
       - type: rewrite
         source: /notifications*
-        destination: https://eduvia-backend.onrender.com/notifications*
+        destination: https://eduvia-backend-4iqm.onrender.com/notifications*
       - type: rewrite
         source: /ai/*
-        destination: https://eduvia-backend.onrender.com/ai/*
+        destination: https://eduvia-backend-4iqm.onrender.com/ai/*
       - type: rewrite
         source: /uploads/*
-        destination: https://eduvia-backend.onrender.com/uploads/*
+        destination: https://eduvia-backend-4iqm.onrender.com/uploads/*
       - type: rewrite
         source: /*
         destination: /index.html
