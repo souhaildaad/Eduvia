@@ -1,0 +1,574 @@
+<section class="users-page">
+  <article class="users-hero">
+    <div class="users-hero__copy">
+      <div class="hero-icon">
+        <mat-icon>group</mat-icon>
+      </div>
+      <div>
+        <h2>Gestion des Utilisateurs</h2>
+        <p>
+          Gerez les roles des utilisateurs : Enseignants et Etudiants.
+          Ajoutez, modifiez ou supprimez des comptes utilisateurs.
+        </p>
+      </div>
+    </div>
+
+    <button type="button" class="primary-action" (click)="openAddUserDialog()">
+      <mat-icon>add</mat-icon>
+      <span>Nouvel utilisateur</span>
+    </button>
+  </article>
+
+  <div class="summary-grid summary-grid--three">
+    <article class="summary-card">
+      <div class="summary-head">
+        <mat-icon>group</mat-icon>
+        <span>Total</span>
+      </div>
+      <strong>{{ userCounts.all }}</strong>
+    </article>
+
+    <article class="summary-card">
+      <div class="summary-head summary-head--teacher">
+        <mat-icon>person_search</mat-icon>
+        <span>Enseignants</span>
+      </div>
+      <strong>{{ userCounts.teacher }}</strong>
+    </article>
+
+    <article class="summary-card">
+      <div class="summary-head summary-head--student">
+        <mat-icon>school</mat-icon>
+        <span>Etudiants</span>
+      </div>
+      <strong>{{ userCounts.student }}</strong>
+    </article>
+  </div>
+
+  <div class="filters-row">
+    <label class="search-field">
+      <mat-icon>search</mat-icon>
+      <input
+        type="text"
+        placeholder="Rechercher par nom ou email..."
+        [(ngModel)]="rawSearchQuery"
+        (input)="onSearchInput(rawSearchQuery)" />
+    </label>
+
+    <div class="menu-shell">
+      <button type="button" class="filter-button" (click)="toggleFilterMenu()">
+        <span>{{ selectedRoleLabel }}</span>
+        <mat-icon [class.rotated]="isFilterMenuOpen">expand_more</mat-icon>
+      </button>
+
+      <div *ngIf="isFilterMenuOpen" class="menu-panel">
+        <button type="button" class="menu-option" (click)="selectFilterRole('all')">Tous les roles</button>
+        <button type="button" class="menu-option" (click)="selectFilterRole('teacher')">Enseignants</button>
+        <button type="button" class="menu-option" (click)="selectFilterRole('student')">Etudiants</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="users-list" *ngIf="filteredUsers.length > 0; else emptyState">
+    <article *ngFor="let user of filteredUsers; trackBy: trackByUserId" class="user-card">
+      <div class="user-main">
+        <div [class]="getRolePanelClass(user.role)">
+          <mat-icon>{{ getRoleIcon(user.role) }}</mat-icon>
+        </div>
+
+        <div class="user-copy">
+          <div class="user-title-row">
+            <h3>{{ user.name }}</h3>
+          </div>
+
+          <div class="user-status-row">
+            <span [class]="getRoleChipClass(user.role)">{{ getRoleLabel(user.role) }}</span>
+            <span [class]="getVerificationClass(user.isVerified)">
+              {{ getVerificationLabel(user.isVerified) }}
+            </span>
+            <span *ngIf="user.isVerified" [class]="getAccountStatusClass(user.accountStatus)">
+              {{ getAccountStatusLabel(user.accountStatus) }}
+            </span>
+          </div>
+
+          <p class="user-email">{{ user.email }}</p>
+
+          <div *ngIf="user.role === 'student'" class="user-class-row">
+            <span class="class-chip-display" [class.class-chip-display--empty]="!user.className">
+              {{ user.className ? 'Classe ' + user.className : 'Classe non attribuee' }}
+            </span>
+          </div>
+
+          <div *ngIf="user.role === 'teacher' && user.assignedClasses?.length; else emptyTeacherClasses" class="user-class-row class-chip-list">
+            <span *ngFor="let className of user.assignedClasses" class="class-chip-display">
+              {{ className }}
+            </span>
+          </div>
+
+          <div *ngIf="user.role === 'teacher' && user.teachingAssignments?.length; else emptyTeacherSubjects" class="user-class-row class-chip-list">
+            <span *ngFor="let assignment of user.teachingAssignments" class="class-chip-display subject-chip-display subject-chip-display--scoped">
+              {{ getTeachingAssignmentLabel(user, assignment) }}
+            </span>
+          </div>
+
+          <ng-template #emptyTeacherClasses>
+            <div *ngIf="user.role === 'teacher'" class="user-class-row">
+              <span class="class-chip-display class-chip-display--empty">Aucune classe affectee</span>
+            </div>
+          </ng-template>
+
+          <ng-template #emptyTeacherSubjects>
+            <div *ngIf="user.role === 'teacher'" class="user-class-row">
+              <span class="class-chip-display class-chip-display--empty">Aucune matiere affectee</span>
+            </div>
+          </ng-template>
+
+          <div class="user-meta">
+            <span>Inscrit le {{ user.createdAt | date:'dd MMM yyyy' }}</span>
+            <ng-container *ngIf="user.isVerified">
+              <span class="dot">•</span>
+              <span>Derniere activite : {{ getLastActivityLabel(user) }}</span>
+            </ng-container>
+          </div>
+        </div>
+      </div>
+
+      <div class="user-actions">
+        <button *ngIf="!user.isVerified" type="button" class="secondary-action" (click)="resendVerification(user)">
+          <mat-icon>forward_to_inbox</mat-icon>
+          <span>Renvoyer la confirmation</span>
+        </button>
+        <button type="button" class="secondary-action" (click)="openEditUserDialog(user)">
+          <mat-icon>edit_square</mat-icon>
+          <span>Modifier</span>
+        </button>
+
+        <button type="button" class="secondary-action secondary-action--danger" (click)="openDeleteModal(user)">
+          <mat-icon>delete</mat-icon>
+          <span>Supprimer</span>
+        </button>
+      </div>
+    </article>
+  </div>
+
+  <ng-template #emptyState>
+    <article class="empty-card">
+      <p>Aucun utilisateur trouve</p>
+    </article>
+  </ng-template>
+
+  <div *ngIf="showAddUserModal" class="modal-backdrop" (click)="closeAddUserDialog()">
+    <section class="modal-panel" (click)="$event.stopPropagation()">
+      <button type="button" class="close-button" (click)="closeAddUserDialog()">
+        <mat-icon>close</mat-icon>
+      </button>
+
+      <h3>Ajouter un nouvel utilisateur</h3>
+
+      <div class="form-field">
+        <label for="new-user-name">Nom complet</label>
+        <input
+          id="new-user-name"
+          type="text"
+          placeholder="Ex: Jean Dupont"
+          [(ngModel)]="newUser.name" />
+      </div>
+
+      <div class="form-field">
+        <label for="new-user-email">Email</label>
+        <input
+          id="new-user-email"
+          type="email"
+          placeholder="jean.dupont@university.fr"
+          [(ngModel)]="newUser.email" />
+      </div>
+
+      <div class="form-field">
+        <label>Role</label>
+        <div class="menu-shell">
+          <button type="button" class="filter-button filter-button--field" (click)="toggleAddRoleMenu()">
+            <span>{{ addRoleLabel }}</span>
+            <mat-icon [class.rotated]="isAddRoleMenuOpen">expand_more</mat-icon>
+          </button>
+
+          <div *ngIf="isAddRoleMenuOpen" class="menu-panel menu-panel--full">
+            <button type="button" class="menu-option" (click)="selectAddRole('teacher')">Enseignant</button>
+            <button type="button" class="menu-option" (click)="selectAddRole('student')">Etudiant</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-field" *ngIf="newUser.role === 'student'">
+        <label for="new-user-class">Classe</label>
+        <div class="menu-shell class-picker">
+          <button
+            id="new-user-class"
+            type="button"
+            class="filter-button filter-button--field"
+            [class.field-invalid]="!newUser.className"
+            (click)="toggleStudentClassMenu('new')">
+            <span>{{ newStudentClassLabel }}</span>
+            <mat-icon [class.rotated]="isNewStudentClassMenuOpen">expand_more</mat-icon>
+          </button>
+
+          <div *ngIf="isNewStudentClassMenuOpen" class="menu-panel menu-panel--full menu-panel--classes">
+            <button
+              *ngFor="let className of studentClasses"
+              type="button"
+              class="menu-option"
+              [class.menu-option--selected]="newUser.className === className"
+              (click)="selectStudentClass('new', className)">
+              <span>{{ className }}</span>
+              <mat-icon *ngIf="newUser.className === className">check</mat-icon>
+            </button>
+          </div>
+        </div>
+        <small [class.validation-error]="!newUser.className">Selectionnez une classe.</small>
+      </div>
+
+      <div class="form-field" *ngIf="newUser.role === 'teacher'">
+        <label for="new-user-classes">Classes affectees</label>
+        <div class="menu-shell class-picker">
+          <button
+            id="new-user-classes"
+            type="button"
+            class="filter-button filter-button--field"
+            [class.field-invalid]="newUser.assignedClasses.length === 0"
+            (click)="toggleAssignedClassesMenu('new')">
+            <span>{{ newAssignedClassesLabel }}</span>
+            <mat-icon [class.rotated]="isNewClassesMenuOpen">expand_more</mat-icon>
+          </button>
+
+          <div *ngIf="isNewClassesMenuOpen" class="menu-panel menu-panel--full menu-panel--classes">
+            <div class="menu-panel__header">
+              <span>Classes</span>
+              <button type="button" class="menu-panel__close" (click)="closeAssignedClassesMenu('new')">
+                <mat-icon>close</mat-icon>
+              </button>
+            </div>
+            <button
+              *ngFor="let className of studentClasses"
+              type="button"
+              class="menu-option"
+              [class.menu-option--selected]="isAssignedClassSelected('new', className)"
+              (click)="toggleAssignedClass('new', className)">
+              <span>{{ className }}</span>
+              <mat-icon *ngIf="isAssignedClassSelected('new', className)">check</mat-icon>
+            </button>
+          </div>
+
+          <div *ngIf="newUser.assignedClasses.length > 0" class="class-chip-list">
+            <button
+              *ngFor="let className of newUser.assignedClasses"
+              type="button"
+              class="class-chip"
+              (click)="removeAssignedClass('new', className)">
+              <span>{{ className }}</span>
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+        </div>
+        <small [class.validation-error]="newUser.assignedClasses.length === 0">Selectionnez au moins une classe.</small>
+      </div>
+
+      <div class="form-field" *ngIf="newUser.role === 'teacher'">
+        <label for="new-user-subjects">Matieres enseignees</label>
+        <input
+          id="new-user-subjects"
+          type="text"
+          placeholder="Ex: Algorithmique, Base de donnees"
+          [(ngModel)]="newUser.teachingSubjectsText"
+          (ngModelChange)="onTeachingSubjectsInput('new')"
+          [class.field-invalid]="newUser.teachingSubjects.length === 0" />
+
+        <div *ngIf="newUser.teachingSubjects.length > 0" class="class-chip-list">
+          <button
+            *ngFor="let subject of newUser.teachingSubjects"
+            type="button"
+            class="class-chip subject-chip"
+            (click)="removeTeachingSubject('new', subject)">
+            <span>{{ subject }}</span>
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+        <div *ngIf="newUser.teachingSubjects.length > 0" class="subject-assignment-list">
+          <div *ngFor="let subject of newUser.teachingSubjects" class="subject-assignment">
+            <div class="subject-assignment__head">
+              <strong>{{ subject }}</strong>
+              <button
+                type="button"
+                class="mini-action"
+                [class.mini-action--selected]="isSubjectForAllClasses(newUser, subject)"
+                (click)="setSubjectForAllClasses(newUser, subject)">
+                Toutes les classes
+              </button>
+            </div>
+            <div class="class-chip-list">
+              <button
+                *ngFor="let className of newUser.assignedClasses"
+                type="button"
+                class="class-chip class-chip--selectable"
+                [class.class-chip--selected]="isSubjectClassSelected(newUser, subject, className)"
+                (click)="toggleSubjectClass(newUser, subject, className)">
+                <span>{{ className }}</span>
+                <mat-icon *ngIf="isSubjectClassSelected(newUser, subject, className)">check</mat-icon>
+              </button>
+            </div>
+          </div>
+        </div>
+        <small [class.validation-error]="newUser.teachingSubjects.length === 0">Saisissez au moins une matiere.</small>
+      </div>
+
+      <div class="form-field">
+        <small>Un mot de passe temporaire sera genere automatiquement et envoye par email.</small>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="ghost-action" (click)="closeAddUserDialog()">Annuler</button>
+        <button
+          type="button"
+          class="primary-action"
+          [disabled]="isCreatingUser || !isCreateUserFormValid"
+          (click)="createUser()">
+          Creer l'utilisateur
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <div *ngIf="showEditUserModal" class="modal-backdrop" (click)="closeEditUserDialog()">
+    <section class="modal-panel" (click)="$event.stopPropagation()">
+      <button type="button" class="close-button" (click)="closeEditUserDialog()">
+        <mat-icon>close</mat-icon>
+      </button>
+
+      <h3>Modifier l'utilisateur</h3>
+
+      <div class="form-field">
+        <label for="edit-user-name">Nom complet</label>
+        <input
+          id="edit-user-name"
+          type="text"
+          [(ngModel)]="editUser.name" />
+      </div>
+
+      <div class="form-field">
+        <label for="edit-user-email">Email</label>
+        <input
+          id="edit-user-email"
+          type="email"
+          [(ngModel)]="editUser.email" />
+      </div>
+
+      <div class="form-field">
+        <label>Role</label>
+        <div class="menu-shell">
+          <button type="button" class="filter-button filter-button--field" (click)="toggleEditRoleMenu()">
+            <span>{{ editRoleLabel }}</span>
+            <mat-icon [class.rotated]="isEditRoleMenuOpen">expand_more</mat-icon>
+          </button>
+
+          <div *ngIf="isEditRoleMenuOpen" class="menu-panel menu-panel--full">
+            <button type="button" class="menu-option" (click)="selectEditRole('teacher')">Enseignant</button>
+            <button type="button" class="menu-option" (click)="selectEditRole('student')">Etudiant</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-field" *ngIf="editUser.role === 'student'">
+        <label for="edit-user-class">Classe</label>
+        <div class="menu-shell class-picker">
+          <button
+            id="edit-user-class"
+            type="button"
+            class="filter-button filter-button--field"
+            [class.field-invalid]="!editUser.className"
+            (click)="toggleStudentClassMenu('edit')">
+            <span>{{ editStudentClassLabel }}</span>
+            <mat-icon [class.rotated]="isEditStudentClassMenuOpen">expand_more</mat-icon>
+          </button>
+
+          <div *ngIf="isEditStudentClassMenuOpen" class="menu-panel menu-panel--full menu-panel--classes">
+            <button
+              *ngFor="let className of studentClasses"
+              type="button"
+              class="menu-option"
+              [class.menu-option--selected]="editUser.className === className"
+              (click)="selectStudentClass('edit', className)">
+              <span>{{ className }}</span>
+              <mat-icon *ngIf="editUser.className === className">check</mat-icon>
+            </button>
+          </div>
+        </div>
+        <small [class.validation-error]="!editUser.className">Selectionnez une classe.</small>
+      </div>
+
+      <div class="form-field" *ngIf="editUser.role === 'teacher'">
+        <label for="edit-user-classes">Classes affectees</label>
+        <div class="menu-shell class-picker">
+          <button
+            id="edit-user-classes"
+            type="button"
+            class="filter-button filter-button--field"
+            [class.field-invalid]="editUser.assignedClasses.length === 0"
+            (click)="toggleAssignedClassesMenu('edit')">
+            <span>{{ editAssignedClassesLabel }}</span>
+            <mat-icon [class.rotated]="isEditClassesMenuOpen">expand_more</mat-icon>
+          </button>
+
+          <div *ngIf="isEditClassesMenuOpen" class="menu-panel menu-panel--full menu-panel--classes">
+            <div class="menu-panel__header">
+              <span>Classes</span>
+              <button type="button" class="menu-panel__close" (click)="closeAssignedClassesMenu('edit')">
+                <mat-icon>close</mat-icon>
+              </button>
+            </div>
+            <button
+              *ngFor="let className of studentClasses"
+              type="button"
+              class="menu-option"
+              [class.menu-option--selected]="isAssignedClassSelected('edit', className)"
+              (click)="toggleAssignedClass('edit', className)">
+              <span>{{ className }}</span>
+              <mat-icon *ngIf="isAssignedClassSelected('edit', className)">check</mat-icon>
+            </button>
+          </div>
+
+          <div *ngIf="editUser.assignedClasses.length > 0" class="class-chip-list">
+            <button
+              *ngFor="let className of editUser.assignedClasses"
+              type="button"
+              class="class-chip"
+              (click)="removeAssignedClass('edit', className)">
+              <span>{{ className }}</span>
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+        </div>
+        <small [class.validation-error]="editUser.assignedClasses.length === 0">Selectionnez au moins une classe.</small>
+      </div>
+
+      <div class="form-field" *ngIf="editUser.role === 'teacher'">
+        <label for="edit-user-subjects">Matieres enseignees</label>
+        <input
+          id="edit-user-subjects"
+          type="text"
+          placeholder="Ex: Algorithmique, Base de donnees"
+          [(ngModel)]="editUser.teachingSubjectsText"
+          (ngModelChange)="onTeachingSubjectsInput('edit')"
+          [class.field-invalid]="editUser.teachingSubjects.length === 0" />
+
+        <div *ngIf="editUser.teachingSubjects.length > 0" class="class-chip-list">
+          <button
+            *ngFor="let subject of editUser.teachingSubjects"
+            type="button"
+            class="class-chip subject-chip"
+            (click)="removeTeachingSubject('edit', subject)">
+            <span>{{ subject }}</span>
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+        <div *ngIf="editUser.teachingSubjects.length > 0" class="subject-assignment-list">
+          <div *ngFor="let subject of editUser.teachingSubjects" class="subject-assignment">
+            <div class="subject-assignment__head">
+              <strong>{{ subject }}</strong>
+              <button
+                type="button"
+                class="mini-action"
+                [class.mini-action--selected]="isSubjectForAllClasses(editUser, subject)"
+                (click)="setSubjectForAllClasses(editUser, subject)">
+                Toutes les classes
+              </button>
+            </div>
+            <div class="class-chip-list">
+              <button
+                *ngFor="let className of editUser.assignedClasses"
+                type="button"
+                class="class-chip class-chip--selectable"
+                [class.class-chip--selected]="isSubjectClassSelected(editUser, subject, className)"
+                (click)="toggleSubjectClass(editUser, subject, className)">
+                <span>{{ className }}</span>
+                <mat-icon *ngIf="isSubjectClassSelected(editUser, subject, className)">check</mat-icon>
+              </button>
+            </div>
+          </div>
+        </div>
+        <small [class.validation-error]="editUser.teachingSubjects.length === 0">Saisissez au moins une matiere.</small>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="ghost-action" (click)="closeEditUserDialog()">Annuler</button>
+        <button type="button" class="primary-action" [disabled]="!isEditUserFormValid" (click)="saveUserChanges()">Enregistrer</button>
+      </div>
+    </section>
+  </div>
+
+  <div *ngIf="showDeleteModal" class="modal-backdrop" (click)="closeDeleteModal()">
+    <section class="modal-panel modal-panel--compact" (click)="$event.stopPropagation()">
+      <button type="button" class="close-button" (click)="closeDeleteModal()">
+        <mat-icon>close</mat-icon>
+      </button>
+
+      <div class="confirm-head">
+        <div class="confirm-icon">
+          <mat-icon>delete_forever</mat-icon>
+        </div>
+        <div>
+          <h3>Supprimer cet utilisateur</h3>
+          <p *ngIf="pendingDeleteUser">
+            Voulez-vous vraiment supprimer {{ pendingDeleteUser.name }} ?
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="ghost-action" (click)="closeDeleteModal()">Annuler</button>
+        <button type="button" class="danger-action" (click)="confirmDeleteUser()">Supprimer</button>
+      </div>
+    </section>
+  </div>
+
+  <div *ngIf="showSuccessModal" class="modal-backdrop" (click)="closeSuccessModal()">
+    <section class="modal-panel modal-panel--compact modal-panel--success" (click)="$event.stopPropagation()">
+      <button type="button" class="close-button" (click)="closeSuccessModal()">
+        <mat-icon>close</mat-icon>
+      </button>
+
+      <div class="confirm-head">
+        <div class="confirm-icon confirm-icon--success">
+          <mat-icon>check_circle</mat-icon>
+        </div>
+        <div>
+          <h3>Operation reussie</h3>
+          <p>{{ successMessage }}</p>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="primary-action" (click)="closeSuccessModal()">Fermer</button>
+      </div>
+    </section>
+  </div>
+
+  <div *ngIf="showErrorModal" class="modal-backdrop" (click)="closeErrorModal()">
+    <section class="modal-panel modal-panel--compact modal-panel--error" (click)="$event.stopPropagation()">
+      <button type="button" class="close-button" (click)="closeErrorModal()">
+        <mat-icon>close</mat-icon>
+      </button>
+
+      <div class="confirm-head">
+        <div class="confirm-icon confirm-icon--error">
+          <mat-icon>error</mat-icon>
+        </div>
+        <div>
+          <h3>Operation impossible</h3>
+          <p>{{ errorMessage }}</p>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="primary-action primary-action--error" (click)="closeErrorModal()">Compris</button>
+      </div>
+    </section>
+  </div>
+</section>

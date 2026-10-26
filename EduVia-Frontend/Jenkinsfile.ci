@@ -1,0 +1,63 @@
+pipeline {
+    agent any
+
+    tools {
+        nodejs 'node20'
+    }
+
+    environment {
+        SONARQUBE = 'SonarQube'
+    }
+
+    stages {
+        stage('Clone') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                dir('frontend') {
+                    sh 'npm install'
+                }
+            }
+        }
+
+        stage('Unit Tests + Coverage') {
+            steps {
+                dir('frontend') {
+                    sh 'npm run test:ci'
+                }
+            }
+        }
+
+        stage('Build Frontend') {
+            steps {
+                dir('frontend') {
+                    sh 'npm run build'
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                dir('frontend') {
+                    withSonarQubeEnv("${SONARQUBE}") {
+                        sh 'sonar-scanner'
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            build job: 'CD-FRONTEND', wait: false
+        }
+
+        failure {
+            echo 'CI Frontend failed. CD Frontend will not start.'
+        }
+    }
+}

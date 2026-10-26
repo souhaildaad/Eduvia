@@ -1,0 +1,196 @@
+<div class="course-quiz">
+  <div class="quiz-header" *ngIf="!standalone">
+    <h2>Quiz de cours</h2>
+    <p>Les quiz publies par les enseignants sont disponibles ici avec correction et note finale.</p>
+  </div>
+
+  <div *ngIf="loading" class="quiz-state">Chargement des quiz...</div>
+  <div *ngIf="error" class="quiz-state error">{{ error }}</div>
+
+  <ng-container *ngIf="!selectedQuiz && !loading && !standalone">
+    <div *ngIf="quizzes.length === 0" class="quiz-state">
+      Aucun quiz interactif n'est encore disponible.
+    </div>
+
+    <div class="quiz-list" *ngIf="quizzes.length > 0">
+      <article class="quiz-card" *ngFor="let quiz of quizzes">
+        <div class="quiz-card-copy">
+          <h3>{{ quiz.title }}</h3>
+          <p>{{ quiz.description }}</p>
+          <div class="quiz-meta">
+            <span>{{ quiz.courseId }} / {{ quiz.chapterId }}</span>
+            <span>{{ quiz.quizQuestions.length }} question(s)</span>
+            <span>Seuil: {{ quiz.quizPassingScore }}%</span>
+            <span>Tentative(s): {{ quiz.quizAttempts || 1 }}</span>
+            <span *ngIf="displayDurationMinutes(quiz) as duration">Chronometre: {{ duration }} min</span>
+          </div>
+          <div class="quiz-meta" *ngIf="quiz.dueDate">
+            <span>Date limite: {{ quiz.dueDate | date:'dd/MM/yyyy' }}</span>
+          </div>
+          <div class="quiz-meta" *ngIf="previousResult(quiz) as prior">
+            <span>Dernier score: {{ prior.score }}%</span>
+            <span>{{ prior.passed ? 'Reussi' : 'A reprendre' }}</span>
+          </div>
+        </div>
+        <div class="quiz-card-actions">
+          <a
+            *ngIf="downloadUrl(quiz)"
+            class="btn-secondary"
+            [href]="downloadUrl(quiz)!"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Telecharger le fichier
+          </a>
+          <button class="btn-primary" type="button" (click)="startQuiz(quiz)" [disabled]="primaryActionDisabled(quiz)">
+            {{ primaryActionLabel(quiz) }}
+          </button>
+        </div>
+      </article>
+    </div>
+  </ng-container>
+
+  <div class="quiz-session" *ngIf="selectedQuiz as quiz">
+    <div class="session-header">
+      <div>
+        <h3>{{ quiz.title }}</h3>
+      </div>
+      <div class="session-header__actions">
+        <button
+          type="button"
+          class="voice-help"
+          (click)="announceQuizSummary(quiz)"
+          aria-label="Lire les informations du quiz"
+        >
+          <mat-icon>{{ isQuizSummaryVoiceActive(quiz) ? 'volume_up' : 'volume_off' }}</mat-icon>
+        </button>
+        <button class="btn-secondary" type="button" (click)="closeQuiz()">Retour</button>
+      </div>
+    </div>
+
+    <div class="session-meta">
+      <span>Cours: {{ quiz.courseId }}</span>
+      <span>Chapitre: {{ quiz.chapterId }}</span>
+      <span>Questions: {{ quiz.quizQuestions.length }}</span>
+      <span>Score minimum: {{ quiz.quizPassingScore }}%</span>
+      <span>Tentative(s): {{ quiz.quizAttempts || 1 }}</span>
+      <span *ngIf="displayDurationMinutes(quiz) as duration">Chronometre: {{ duration }} min</span>
+      <span *ngIf="remainingSeconds !== null">Temps restant: {{ displayRemainingTime() }}</span>
+    </div>
+
+    <section class="question-card" *ngFor="let question of quiz.quizQuestions; let index = index">
+      <div class="question-header">
+        <span class="question-number">{{ index + 1 }}</span>
+        <div class="question-header__content">
+          <h4>{{ question.type === 'multiple' ? 'Choix multiples' : 'Choix unique' }}</h4>
+          <p>{{ question.prompt }}</p>
+        </div>
+        <button
+          type="button"
+          class="voice-help voice-help--question"
+          (click)="announceQuestion(question, index)"
+          aria-label="Lire la question"
+        >
+          <mat-icon>{{ isQuestionVoiceActive(question) ? 'volume_up' : 'volume_off' }}</mat-icon>
+        </button>
+      </div>
+
+      <label
+        class="option-row"
+        *ngFor="let option of question.options"
+        [class.option-row--correct]="submitted && isChecked(question, option.label) && question.correctAnswers.includes(option.label)"
+        [class.option-row--incorrect]="submitted && isChecked(question, option.label) && !question.correctAnswers.includes(option.label)"
+      >
+        <input
+          [type]="question.type === 'multiple' ? 'checkbox' : 'radio'"
+          [name]="question.id"
+          [checked]="isChecked(question, option.label)"
+          [disabled]="submitted"
+          (change)="toggleAnswer(question, option.label, $any($event.target).checked)"
+        />
+        <span class="option-label">{{ option.label }}</span>
+        <span class="option-text">{{ option.text }}</span>
+      </label>
+
+      <div class="answer-feedback" *ngIf="submitted">
+        <div>
+          <strong>Votre reponse:</strong>
+          {{ selectedAnswerLabels(question) }}
+        </div>
+        <div>
+          <strong>Reponse correcte:</strong>
+          {{ question.correctAnswers.join(', ') }}
+          <span *ngIf="question.explanation"> - {{ question.explanation }}</span>
+        </div>
+        <div [class.pass]="questionAnsweredCorrectly(question)" [class.fail]="!questionAnsweredCorrectly(question)">
+          {{ questionAnsweredCorrectly(question) ? 'Bonne reponse' : 'Reponse incorrecte' }}
+        </div>
+      </div>
+    </section>
+
+    <div class="quiz-footer" [class.quiz-footer--has-result]="!!result">
+      <div class="quiz-footer-panel">
+        <div class="result-card" *ngIf="result">
+          <h4>Resultat final</h4>
+          <p>Score: {{ result.score }}%</p>
+          <p>Reponses justes: {{ result.correctCount }} / {{ result.totalQuestions }}</p>
+          <p [class.pass]="result.passed" [class.fail]="!result.passed">
+            {{ result.passed ? 'Quiz reussi' : 'Quiz non reussi' }}
+          </p>
+        </div>
+
+        <div class="session-actions">
+          <button class="btn-primary" type="button" (click)="submitQuiz()" [disabled]="submitted">
+            Soumettre le quiz
+          </button>
+        <button
+          *ngIf="downloadUrl(quiz)"
+          class="btn-secondary"
+          type="button"
+          [disabled]="!submitted"
+          (click)="openSourceFile(quiz)"
+        >
+          Ouvrir le fichier source
+        </button>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <div class="result-modal-backdrop" *ngIf="showResultModal && selectedQuiz && result">
+    <div class="result-modal" role="dialog" aria-modal="true" aria-labelledby="quiz-result-title">
+      <div class="result-modal__header">
+        <div>
+          <p class="quiz-chip">Resultat du quiz</p>
+          <h3 id="quiz-result-title">{{ selectedQuiz.title }}</h3>
+        </div>
+      </div>
+
+      <div class="result-modal__body">
+        <div class="result-summary-card">
+          <h4>Resultat final</h4>
+          <p>Score: {{ result.score }}%</p>
+          <p>Reponses justes: {{ result.correctCount }} / {{ result.totalQuestions }}</p>
+          <p>Cours: {{ selectedQuiz.courseId || '-' }}</p>
+          <p>Chapitre: {{ selectedQuiz.chapterId || '-' }}</p>
+          <p [class.pass]="result.passed" [class.fail]="!result.passed">
+            {{ result.passed ? 'Quiz reussi' : 'Quiz non reussi' }}
+          </p>
+        </div>
+      </div>
+
+      <div class="result-modal__actions">
+        <button class="btn-secondary" type="button" (click)="closeResultModal()">
+          Quitter
+        </button>
+        <button class="btn-primary" type="button" (click)="downloadSolvedQuiz()">
+          Telecharger
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="sr-only" aria-live="polite" aria-atomic="true">
+  {{ screenReaderMessage }}
+</div>

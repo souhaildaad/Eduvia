@@ -1,0 +1,99 @@
+<main class="level-test-shell">
+  <section *ngIf="!started" class="level-welcome-card">
+    <div class="level-brand">
+      <img src="logo.png" alt="EduVia logo" />
+      <strong>EDUVIA</strong>
+    </div>
+    <div class="level-welcome-grid">
+      <div class="level-welcome-copy">
+        <span>Evaluation intelligente</span>
+        <h1>Bienvenue {{ studentName }}</h1>
+        <p>Avant d'ouvrir ton dashboard, EduVia va mesurer ton niveau sur les matieres principales et preparer un parcours adapte.</p>
+        <div class="level-actions">
+          <button type="button" class="level-primary" (click)="start()">
+            <mat-icon>psychology</mat-icon>
+            Check your level
+          </button>
+          <button type="button" class="level-secondary" [class.active]="voiceEnabled" (click)="toggleVoice()">
+            <mat-icon>hearing</mat-icon>
+            {{ voiceEnabled ? 'Lecteur vocal active' : 'Activer lecteur vocal' }}
+          </button>
+        </div>
+      </div>
+      <aside class="level-info-card">
+        <mat-icon>school</mat-icon>
+        <strong>20 questions</strong>
+        <p>Algo, reseaux, Angular, React, Java, Python, bases de donnees, Spring Boot et plus.</p>
+      </aside>
+    </div>
+  </section>
+
+  <section *ngIf="started && !result" class="level-question-card">
+    <div class="level-progress-head">
+      <span>Question {{ currentIndex + 1 }} sur {{ questions.length }}</span>
+      <strong>{{ progress }}%</strong>
+    </div>
+    <div class="level-progress"><span [style.width.%]="progress"></span></div>
+
+    <header class="level-question-title">
+      <mat-icon>psychology</mat-icon>
+      <div>
+        <h1>Evaluation intelligente de votre niveau</h1>
+        <p>Repondez aux questions pour que l'IA adapte le contenu a vos besoins.</p>
+      </div>
+      <button type="button" class="level-reader" [class.active]="voiceEnabled" (click)="toggleVoice()">
+        <mat-icon>hearing</mat-icon>
+        Lecteur
+      </button>
+    </header>
+
+    <article class="level-question-box">
+      <span>{{ currentQuestion.subject }}</span>
+      <h2>{{ currentQuestion.prompt }}</h2>
+      <button
+        type="button"
+        class="level-option"
+        *ngFor="let option of currentQuestion.options; let index = index"
+        [class.selected]="selectedIndex === index"
+        (click)="selectAnswer(index)"
+      >
+        <strong>{{ index + 1 }}</strong>
+        {{ option }}
+      </button>
+    </article>
+
+    <footer class="level-question-footer">
+      <button type="button" class="level-secondary" [disabled]="currentIndex === 0" (click)="previous()">
+        Precedent
+      </button>
+      <button type="button" class="level-primary" [disabled]="selectedIndex === null" (click)="next()">
+        {{ currentIndex === questions.length - 1 ? 'Voir resultat' : 'Suivant' }}
+      </button>
+    </footer>
+  </section>
+
+  <section *ngIf="result as testResult" class="level-result-card">
+    <div class="level-result-main">
+      <span>Resultat du test</span>
+      <h1>Niveau {{ testResult.levelLabel }}</h1>
+      <p>{{ testResult.recommendation }}</p>
+      <div class="level-result-panels">
+        <article>
+          <h2>Forces detectees</h2>
+          <span *ngFor="let strength of testResult.strengths">{{ strength }}</span>
+        </article>
+        <article>
+          <h2>Points a renforcer</h2>
+          <span *ngFor="let weakness of testResult.weaknesses">{{ weakness }}</span>
+        </article>
+      </div>
+    </div>
+    <aside class="level-score-ring">
+      <strong>{{ testResult.correctCount }}/{{ testResult.totalQuestions }}</strong>
+      <span>{{ testResult.score }}%</span>
+    </aside>
+    <button type="button" class="level-primary level-dashboard-button" (click)="continueToDashboard()">
+      Ouvrir mon dashboard
+    </button>
+  </section>
+</main>

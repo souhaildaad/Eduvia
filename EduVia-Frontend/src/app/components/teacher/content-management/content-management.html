@@ -1,0 +1,1395 @@
+<div class="container">
+
+  <!-- HEADER -->
+  <div class="header-card">
+    <div class="header-left">
+      <div class="icon">
+        <mat-icon>menu_book</mat-icon>
+      </div>
+      <div>
+        <h2>Gestion des Contenus Pedagogiques</h2>
+        <p>
+          Ajoutez, modifiez ou supprimez des cours, videos, quiz et exercices.
+          Consultez les statistiques de consultation et de satisfaction.
+        </p>
+      </div>
+    </div>
+
+    <div class="header-actions" *ngIf="selectedCourseView">
+      <button class="btn-secondary" type="button" (click)="openAutoQuizModal()">
+        <mat-icon>auto_awesome</mat-icon>
+        Quiz auto
+      </button>
+      <button class="btn-primary" type="button" (click)="openModal()">
+        <mat-icon>add</mat-icon>
+        Ajouter contenu
+      </button>
+    </div>
+
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-grid" *ngIf="!selectedCourseView">
+    <div class="stat-card" *ngFor="let type of contentTypes">
+      <mat-icon class="stat-icon" [ngClass]="contentTypeTone(type)">{{ contentTypeIcon(type) }}</mat-icon>
+      <p>{{ type }}</p>
+      <h3>{{ displayedContentTypeCounts[type] || 0 }}</h3>
+    </div>
+  </div>
+
+  <ng-container *ngIf="!selectedCourseView; else selectedCourseTemplate">
+    <div class="section-toolbar">
+      <h3 class="section-title">Tous les cours</h3>
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="class-filter-field" *ngIf="teacherAssignedClasses.length">
+        <mat-select [(ngModel)]="selectedClassFilter" (ngModelChange)="onClassFilterChange($event)" panelClass="wizard-select-panel">
+          <mat-option value="all">Toutes les classes</mat-option>
+          <mat-option *ngFor="let className of teacherAssignedClasses" [value]="className">{{ className }}</mat-option>
+        </mat-select>
+      </mat-form-field>
+    </div>
+
+    <div class="empty-courses" *ngIf="displayedCourseKeysList.length === 0">
+      Aucun cours n'est disponible pour le moment.
+    </div>
+
+    <div class="course-gallery" *ngIf="displayedCourseKeysList.length > 0">
+      <article class="course-tile" *ngFor="let course of displayedCourseKeysList" (click)="openCourseView(course)">
+        <div class="course-tile__cover">
+          <div class="course-tile__overlay"></div>
+          <span class="course-tile__code">{{ courseAvatarLabel(course) }}</span>
+        </div>
+
+        <div class="course-tile__body">
+          <p class="course-tile__meta">{{ course }}</p>
+          <h4>{{ course }}</h4>
+          <span class="course-tile__status">{{ courseStatusLabel(course) }}</span>
+        </div>
+
+        <div class="course-tile__footer">
+          <span>{{ courseTeacherName(course) }}</span>
+        </div>
+      </article>
+    </div>
+  </ng-container>
+
+  <ng-template #selectedCourseTemplate>
+    <div class="course-detail-page" *ngIf="selectedCourseView">
+      <section class="course-detail-hero">
+        <div class="course-detail-hero__top">
+          <button type="button" class="back-link" (click)="closeCourseView()">
+            <span class="back-link__arrow" aria-hidden="true"></span>
+            Retour aux cours
+          </button>
+          <div class="course-detail-actions">
+            <div class="course-menu-wrap">
+              <button
+                class="menu-btn course-hero-menu-btn"
+                type="button"
+                aria-label="Menu du cours"
+                (click)="toggleCourseMenu(selectedCourseView, $event)"
+              >
+                <span class="menu-dots" aria-hidden="true">...</span>
+              </button>
+              <div class="course-menu" *ngIf="openedCourseMenu === selectedCourseView" (click)="$event.stopPropagation()">
+                <button type="button" class="course-menu-item" (click)="addLinkedContent(selectedCourseView, $event)">
+                  Ajouter chapitre
+                </button>
+                <button type="button" class="course-menu-item" (click)="editCourse(selectedCourseView, $event)">
+                  Modifier
+                </button>
+                <button type="button" class="course-menu-item danger" (click)="deleteCourse(selectedCourseView, $event)">
+                  Supprimer
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <h3>{{ selectedCourseView }}</h3>
+      </section>
+
+      <div class="course-detail-layout">
+        <div
+          class="course-detail-main"
+          (dragover)="onCourseContentDragOver(selectedCourseView, $event)"
+          (dragleave)="onCourseContentDragLeave(selectedCourseView)"
+          (drop)="onCourseContentDrop(selectedCourseView, $event)"
+        >
+          <div class="course-detail-header">
+            <h4>Contenu du cours</h4>
+            <i class="fa-solid fa-magnifying-glass"></i>
+          </div>
+
+          <div class="chapter-listing">
+            <article class="chapter-card" *ngFor="let chapter of getChapters(selectedCourseView)">
+              <div class="chapter-card__header" (click)="toggleChapter(selectedCourseView, chapter)">
+                <div class="chapter-card__title">
+                  <div>
+                    <strong>{{ chapter }}</strong>
+                    <p>{{ chapterSummary(selectedCourseView, chapter) }}</p>
+                  </div>
+                </div>
+
+                <div class="chapter-card__meta">
+                  <span class="tree-count">{{ chapterTotal(selectedCourseView, chapter) }} contenus</span>
+                  <div class="course-menu-wrap">
+                    <button
+                      class="menu-btn visibility-btn"
+                      type="button"
+                      aria-label="Visibilite du chapitre"
+                      (click)="toggleVisibilityMenu(visibilityMenuKeyForChapter(selectedCourseView, chapter), $event)"
+                    >
+                      <mat-icon>{{ visibilityDropdownIcon(getChapterItems(selectedCourseView, chapter)) }}</mat-icon>
+                    </button>
+                    <div
+                      class="course-menu visibility-menu"
+                      *ngIf="openedVisibilityMenu === visibilityMenuKeyForChapter(selectedCourseView, chapter)"
+                      (click)="$event.stopPropagation()"
+                    >
+                      <div class="visibility-menu__title">Visibilite</div>
+                      <button
+                        type="button"
+                        class="course-menu-item visibility-option"
+                        [class.visibility-option--active]="isVisibleToAllClasses(getChapterItems(selectedCourseView, chapter))"
+                        (click)="setVisibilityForAllClasses(getChapterItems(selectedCourseView, chapter), visibilityMenuKeyForChapter(selectedCourseView, chapter), $event)"
+                      >
+                        <span>Toutes les classes</span>
+                        <mat-icon>{{ isVisibleToAllClasses(getChapterItems(selectedCourseView, chapter)) ? 'visibility' : 'visibility_off' }}</mat-icon>
+                      </button>
+                      <button
+                        *ngFor="let className of teacherAssignedClasses"
+                        type="button"
+                        class="course-menu-item visibility-option"
+                        [class.visibility-option--active]="isVisibleToClass(getChapterItems(selectedCourseView, chapter), className)"
+                        (click)="toggleVisibilityForClass(getChapterItems(selectedCourseView, chapter), className, visibilityMenuKeyForChapter(selectedCourseView, chapter), $event)"
+                      >
+                        <span>{{ className }}</span>
+                        <mat-icon>{{ isVisibleToAllClasses(getChapterItems(selectedCourseView, chapter)) || isVisibleToClass(getChapterItems(selectedCourseView, chapter), className) ? 'visibility' : 'visibility_off' }}</mat-icon>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="course-menu-wrap">
+                    <button
+                      class="menu-btn"
+                      type="button"
+                      aria-label="Menu du chapitre"
+                      (click)="toggleChapterMenu(selectedCourseView, chapter, $event)"
+                    >
+                      <span class="menu-dots" aria-hidden="true">...</span>
+                    </button>
+                    <div class="course-menu" *ngIf="openedChapterMenu === (selectedCourseView + '|' + chapter)">
+                      <button type="button" class="course-menu-item" (click)="addLinkedContentToChapter(selectedCourseView, chapter, $event)">
+                        Ajouter contenu lie
+                      </button>
+                      <button type="button" class="course-menu-item" (click)="editChapter(selectedCourseView, chapter, $event)">
+                        Modifier
+                      </button>
+                      <button type="button" class="course-menu-item danger" (click)="deleteChapter(selectedCourseView, chapter, $event)">
+                        Supprimer
+                      </button>
+                    </div>
+                  </div>
+                  <i
+                    class="fa-solid chapter-chevron"
+                    [ngClass]="chapterExpanded[selectedCourseView + '|' + chapter] ? 'fa-chevron-up' : 'fa-chevron-down'"
+                  ></i>
+                </div>
+              </div>
+
+              <div class="chapter-card__content" *ngIf="chapterExpanded[selectedCourseView + '|' + chapter]">
+                <article
+                  class="part-card"
+                  *ngFor="let part of getParts(selectedCourseView, chapter)"
+                  [class.part-card__content--drop-target]="isDropTargetActive(selectedCourseView, chapter, part)"
+                  (dragover)="onPartDragOver(selectedCourseView, chapter, part, $event)"
+                  (dragleave)="onPartDragLeave(selectedCourseView, chapter, part)"
+                  (drop)="onPartDrop(selectedCourseView, chapter, part, $event)"
+                >
+                  <div
+                    class="part-card__header"
+                    (click)="togglePart(selectedCourseView, chapter, part)"
+                    (dragover)="onPartDragOver(selectedCourseView, chapter, part, $event)"
+                    (drop)="onPartDrop(selectedCourseView, chapter, part, $event)"
+                  >
+                    <div class="part-card__title">
+                      <div>
+                        <strong>{{ part }}</strong>
+                        <p>{{ partSummary(selectedCourseView, chapter, part) }}</p>
+                      </div>
+                    </div>
+
+                    <div class="part-card__meta">
+                      <span class="tree-count">{{ getItemsForPart(selectedCourseView, chapter, part).length }} contenus</span>
+                      <div class="course-menu-wrap">
+                        <button
+                          class="menu-btn visibility-btn"
+                          type="button"
+                          aria-label="Visibilite de la partie"
+                          (click)="toggleVisibilityMenu(visibilityMenuKeyForPart(selectedCourseView, chapter, part), $event)"
+                        >
+                          <mat-icon>{{ visibilityDropdownIcon(getItemsForPart(selectedCourseView, chapter, part)) }}</mat-icon>
+                        </button>
+                        <div
+                          class="course-menu visibility-menu"
+                          *ngIf="openedVisibilityMenu === visibilityMenuKeyForPart(selectedCourseView, chapter, part)"
+                          (click)="$event.stopPropagation()"
+                        >
+                          <div class="visibility-menu__title">Visibilite</div>
+                          <button
+                            type="button"
+                            class="course-menu-item visibility-option"
+                            [class.visibility-option--active]="isVisibleToAllClasses(getItemsForPart(selectedCourseView, chapter, part))"
+                            (click)="setVisibilityForAllClasses(getItemsForPart(selectedCourseView, chapter, part), visibilityMenuKeyForPart(selectedCourseView, chapter, part), $event)"
+                          >
+                            <span>Toutes les classes</span>
+                            <mat-icon>{{ isVisibleToAllClasses(getItemsForPart(selectedCourseView, chapter, part)) ? 'visibility' : 'visibility_off' }}</mat-icon>
+                          </button>
+                          <button
+                            *ngFor="let className of teacherAssignedClasses"
+                            type="button"
+                            class="course-menu-item visibility-option"
+                            [class.visibility-option--active]="isVisibleToClass(getItemsForPart(selectedCourseView, chapter, part), className)"
+                            (click)="toggleVisibilityForClass(getItemsForPart(selectedCourseView, chapter, part), className, visibilityMenuKeyForPart(selectedCourseView, chapter, part), $event)"
+                          >
+                            <span>{{ className }}</span>
+                            <mat-icon>{{ isVisibleToAllClasses(getItemsForPart(selectedCourseView, chapter, part)) || isVisibleToClass(getItemsForPart(selectedCourseView, chapter, part), className) ? 'visibility' : 'visibility_off' }}</mat-icon>
+                          </button>
+                        </div>
+                      </div>
+                      <div class="course-menu-wrap">
+                        <button
+                          class="menu-btn"
+                          type="button"
+                          aria-label="Menu de la partie"
+                          (click)="togglePartMenu(selectedCourseView, chapter, part, $event)"
+                        >
+                          <span class="menu-dots" aria-hidden="true">...</span>
+                        </button>
+                        <div class="course-menu" *ngIf="openedPartMenu === (selectedCourseView + '|' + chapter + '|' + part)">
+                          <div class="linked-content-menu-wrap">
+                            <button
+                              type="button"
+                              class="course-menu-item linked-content-trigger"
+                              (click)="toggleLinkedContentSubmenu('part|' + selectedCourseView + '|' + chapter + '|' + part, $event)"
+                            >
+                              <span>Ajouter contenu lie</span>
+                              <span class="linked-content-arrow">></span>
+                            </button>
+                            <div
+                              class="course-menu linked-content-submenu"
+                              *ngIf="openedLinkedContentSubmenu === ('part|' + selectedCourseView + '|' + chapter + '|' + part)"
+                              (click)="$event.stopPropagation()"
+                            >
+                              <button type="button" class="course-menu-item" (click)="chooseLinkedContentTypeForPart(selectedCourseView, chapter, part, 'document', $event)">
+                                Document
+                              </button>
+                              <button type="button" class="course-menu-item" (click)="chooseLinkedContentTypeForPart(selectedCourseView, chapter, part, 'video', $event)">
+                                Video
+                              </button>
+                              <button type="button" class="course-menu-item" (click)="chooseLinkedContentTypeForPart(selectedCourseView, chapter, part, 'quiz', $event)">
+                                Quiz
+                              </button>
+                            </div>
+                          </div>
+                          <button type="button" class="course-menu-item" (click)="editPart(selectedCourseView, chapter, part, $event)">
+                            Modifier
+                          </button>
+                          <button type="button" class="course-menu-item danger" (click)="deletePart(selectedCourseView, chapter, part, $event)">
+                            Supprimer
+                          </button>
+                        </div>
+                      </div>
+                      <i
+                        class="fa-solid chapter-chevron"
+                        [ngClass]="partExpanded[selectedCourseView + '|' + chapter + '|' + part] ? 'fa-chevron-up' : 'fa-chevron-down'"
+                      ></i>
+                    </div>
+                  </div>
+
+                  <div
+                    class="part-card__content"
+                    *ngIf="partExpanded[selectedCourseView + '|' + chapter + '|' + part]"
+                    [class.part-card__content--drop-target]="isDropTargetActive(selectedCourseView, chapter, part)"
+                    (dragover)="onPartDragOver(selectedCourseView, chapter, part, $event)"
+                    (dragleave)="onPartDragLeave(selectedCourseView, chapter, part)"
+                    (drop)="onPartDrop(selectedCourseView, chapter, part, $event)"
+                  >
+                    <section
+                      class="part-type-card"
+                      *ngFor="let group of getPartContentGroups(selectedCourseView, chapter, part)"
+                      [class.part-card__content--drop-target]="isDropTargetActive(selectedCourseView, chapter, part)"
+                      [class.part-type-card--drop-target]="isPartTypeDropTargetActive(selectedCourseView, chapter, part, group.key)"
+                      (dragover)="onPartTypeDragOver(selectedCourseView, chapter, part, group.key, $event)"
+                      (dragleave)="onPartTypeDragLeave(selectedCourseView, chapter, part, group.key)"
+                      (drop)="onPartTypeDrop(selectedCourseView, chapter, part, group.key, $event)"
+                    >
+                      <div
+                        class="part-type-card__header part-type-card__header--clickable"
+                        (click)="togglePartTypeGroup(selectedCourseView, chapter, part, group.key)"
+                        (dragover)="onPartTypeDragOver(selectedCourseView, chapter, part, group.key, $event)"
+                        (drop)="onPartTypeDrop(selectedCourseView, chapter, part, group.key, $event)"
+                      >
+                        <div>
+                          <mat-icon>{{ group.icon }}</mat-icon>
+                          <strong>{{ group.label }}</strong>
+                        </div>
+                        <div class="part-type-card__meta">
+                          <span>{{ group.items.length }} contenu{{ group.items.length > 1 ? 's' : '' }}</span>
+                          <i
+                            class="fa-solid chapter-chevron"
+                            [ngClass]="isPartTypeGroupExpanded(selectedCourseView, chapter, part, group.key) ? 'fa-chevron-up' : 'fa-chevron-down'"
+                          ></i>
+                        </div>
+                      </div>
+
+                      <div
+                        class="part-type-card__dropzone"
+                        *ngIf="draggingContentId && canDropCurrentItemInGroup(group.key)"
+                        (dragover)="onPartTypeDragOver(selectedCourseView, chapter, part, group.key, $event)"
+                        (drop)="onPartTypeDrop(selectedCourseView, chapter, part, group.key, $event)"
+                      >
+                        Deposer ici
+                      </div>
+
+                      <div
+                        class="part-type-card__empty"
+                        *ngIf="isPartTypeGroupExpanded(selectedCourseView, chapter, part, group.key) && !group.items.length"
+                        (dragover)="onPartTypeDragOver(selectedCourseView, chapter, part, group.key, $event)"
+                        (drop)="onPartTypeDrop(selectedCourseView, chapter, part, group.key, $event)"
+                      >
+                        Aucun contenu
+                      </div>
+
+                      <div
+                        class="part-item"
+                        *ngFor="let item of isPartTypeGroupExpanded(selectedCourseView, chapter, part, group.key) ? group.items : []"
+                        draggable="true"
+                        [class.part-item--dragging]="draggingContentId === item._id"
+                        (dragstart)="onContentDragStart(item, $event)"
+                        (dragend)="onContentDragEnd()"
+                      >
+                        <div class="part-item__main" (click)="openPreview(item)">
+                          <i class="fa-regular part-item__icon" [ngClass]="itemIconClass(item)"></i>
+                          <div>
+                            <div class="item-title-row">
+                              <strong>{{ item.title }}</strong>
+                              <span *ngIf="quizLevelLabel(item)" class="quiz-level-badge">{{ quizLevelLabel(item) }}</span>
+                            </div>
+                            <p *ngIf="formatDueDateLabel(item)">
+                              Date d'echeance : {{ formatDueDateLabel(item) }}
+                            </p>
+                            <p *ngIf="!formatDueDateLabel(item) && !quizLevelLabel(item)">{{ item.type }}</p>
+                          </div>
+                        </div>
+
+                        <div class="course-menu-wrap">
+                          <button
+                            class="menu-btn visibility-btn"
+                            type="button"
+                            aria-label="Visibilite du contenu"
+                            (click)="toggleVisibilityMenu(visibilityMenuKeyForItem(item), $event)"
+                          >
+                            <mat-icon>{{ visibilityDropdownIcon([item]) }}</mat-icon>
+                          </button>
+                          <div
+                            class="course-menu visibility-menu"
+                            *ngIf="openedVisibilityMenu === visibilityMenuKeyForItem(item)"
+                            (click)="$event.stopPropagation()"
+                          >
+                            <div class="visibility-menu__title">Visibilite</div>
+                            <button
+                              type="button"
+                              class="course-menu-item visibility-option"
+                              [class.visibility-option--active]="isVisibleToAllClasses([item])"
+                              (click)="setVisibilityForAllClasses([item], visibilityMenuKeyForItem(item), $event)"
+                            >
+                              <span>Toutes les classes</span>
+                              <mat-icon>{{ isVisibleToAllClasses([item]) ? 'visibility' : 'visibility_off' }}</mat-icon>
+                            </button>
+                            <button
+                              *ngFor="let className of teacherAssignedClasses"
+                              type="button"
+                              class="course-menu-item visibility-option"
+                              [class.visibility-option--active]="isVisibleToClass([item], className)"
+                              (click)="toggleVisibilityForClass([item], className, visibilityMenuKeyForItem(item), $event)"
+                            >
+                              <span>{{ className }}</span>
+                              <mat-icon>{{ isVisibleToAllClasses([item]) || isVisibleToClass([item], className) ? 'visibility' : 'visibility_off' }}</mat-icon>
+                            </button>
+                          </div>
+                          <button
+                            class="menu-btn"
+                            type="button"
+                            aria-label="Menu du contenu"
+                            (click)="toggleItemMenu(item, $event)"
+                          >
+                            <span class="menu-dots" aria-hidden="true">...</span>
+                          </button>
+                          <div
+                            class="course-menu"
+                            *ngIf="openedItemMenu === (item._id || (item.courseId + '|' + item.chapterId + '|' + item.partId + '|' + item.title))"
+                            (click)="$event.stopPropagation()"
+                          >
+                            <button type="button" class="course-menu-item" (click)="editItemFromMenu(item, $event)">
+                              Modifier
+                            </button>
+                            <button type="button" class="course-menu-item danger" (click)="deleteContent(item)">
+                              Supprimer
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                </article>
+              </div>
+            </article>
+          </div>
+
+          <section
+            class="course-level-list"
+            *ngIf="getCourseLevelItems(selectedCourseView).length"
+          >
+            <div
+              class="part-item"
+              *ngFor="let item of getCourseLevelItems(selectedCourseView)"
+              draggable="true"
+              [class.part-item--dragging]="draggingContentId === item._id"
+              (dragstart)="onContentDragStart(item, $event)"
+              (dragend)="onContentDragEnd()"
+            >
+              <div class="part-item__main" (click)="openPreview(item)">
+                <i class="fa-regular part-item__icon" [ngClass]="itemIconClass(item)"></i>
+                <div>
+                  <div class="item-title-row">
+                    <strong>{{ item.title }}</strong>
+                    <span *ngIf="quizLevelLabel(item)" class="quiz-level-badge">{{ quizLevelLabel(item) }}</span>
+                  </div>
+                  <p *ngIf="formatDueDateLabel(item)">
+                    Date d'echeance : {{ formatDueDateLabel(item) }}
+                  </p>
+                  <p *ngIf="!formatDueDateLabel(item) && !quizLevelLabel(item)">{{ item.type }}</p>
+                </div>
+              </div>
+
+              <div class="course-menu-wrap">
+                <button
+                  class="menu-btn visibility-btn"
+                  type="button"
+                  aria-label="Visibilite du contenu"
+                  (click)="toggleVisibilityMenu(visibilityMenuKeyForItem(item), $event)"
+                >
+                  <mat-icon>{{ visibilityDropdownIcon([item]) }}</mat-icon>
+                </button>
+                <div
+                  class="course-menu visibility-menu"
+                  *ngIf="openedVisibilityMenu === visibilityMenuKeyForItem(item)"
+                  (click)="$event.stopPropagation()"
+                >
+                  <div class="visibility-menu__title">Visibilite</div>
+                  <button
+                    type="button"
+                    class="course-menu-item visibility-option"
+                    [class.visibility-option--active]="isVisibleToAllClasses([item])"
+                    (click)="setVisibilityForAllClasses([item], visibilityMenuKeyForItem(item), $event)"
+                  >
+                    <span>Toutes les classes</span>
+                    <mat-icon>{{ isVisibleToAllClasses([item]) ? 'visibility' : 'visibility_off' }}</mat-icon>
+                  </button>
+                  <button
+                    *ngFor="let className of teacherAssignedClasses"
+                    type="button"
+                    class="course-menu-item visibility-option"
+                    [class.visibility-option--active]="isVisibleToClass([item], className)"
+                    (click)="toggleVisibilityForClass([item], className, visibilityMenuKeyForItem(item), $event)"
+                  >
+                    <span>{{ className }}</span>
+                    <mat-icon>{{ isVisibleToAllClasses([item]) || isVisibleToClass([item], className) ? 'visibility' : 'visibility_off' }}</mat-icon>
+                  </button>
+                </div>
+                <button
+                  class="menu-btn"
+                  type="button"
+                  aria-label="Menu du contenu"
+                  (click)="toggleItemMenu(item, $event)"
+                >
+                  <span class="menu-dots" aria-hidden="true">...</span>
+                </button>
+                <div
+                  class="course-menu"
+                  *ngIf="openedItemMenu === (item._id || (item.courseId + '|' + item.chapterId + '|' + item.partId + '|' + item.title))"
+                  (click)="$event.stopPropagation()"
+                >
+                  <button type="button" class="course-menu-item" (click)="editItemFromMenu(item, $event)">
+                    Modifier
+                  </button>
+                  <button type="button" class="course-menu-item danger" (click)="deleteContent(item)">
+                    Supprimer
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </div>
+
+        <aside class="course-sidebar">
+          <section class="sidebar-card">
+            <h4>Corps enseignant du cours</h4>
+            <div class="sidebar-teacher">
+              <div class="sidebar-teacher__avatar">
+                <img
+                  *ngIf="courseTeacherAvatar(selectedCourseView)"
+                  [src]="courseTeacherAvatar(selectedCourseView)"
+                  [alt]="courseTeacherName(selectedCourseView)"
+                  class="sidebar-teacher__avatar-image"
+                />
+                <span *ngIf="!courseTeacherAvatar(selectedCourseView)">{{ teacherInitialsForCourse(selectedCourseView) }}</span>
+              </div>
+              <div>
+                <strong>{{ courseTeacherName(selectedCourseView) }}</strong>
+                <span [class]="sidebarTeacherBadgeClass()">{{ sidebarTeacherBadgeLabel() }}</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="sidebar-card">
+            <h4>Details et actions</h4>
+            <div class="sidebar-link">
+              <i class="fa-regular fa-address-book"></i>
+              <div>
+                <strong>Annuaire</strong>
+                <a href="#" (click)="openCourseMembersDirectory($event)">Afficher tous les membres de votre cours</a>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </ng-template>
+</div>
+
+<div class="modal-overlay" *ngIf="showCourseMembersModal">
+  <div class="modal members-modal">
+    <div class="modal-header">
+      <h3>Annuaire du cours</h3>
+      <button class="close" type="button" aria-label="Fermer" (click)="closeCourseMembersDirectory()">
+        <span class="close-mark" aria-hidden="true">X</span>
+      </button>
+    </div>
+
+    <div class="members-toolbar">
+      <div class="members-filter">
+        <button
+          type="button"
+          class="members-filter__chip"
+          [class.members-filter__chip--active]="selectedCourseMemberClass === 'all'"
+          (click)="selectCourseMemberClass('all')"
+        >
+          Tous les etudiants
+        </button>
+        <button
+          *ngFor="let className of courseMemberClasses"
+          type="button"
+          class="members-filter__chip"
+          [class.members-filter__chip--active]="selectedCourseMemberClass === className"
+          (click)="selectCourseMemberClass(className)"
+        >
+          {{ className }}
+        </button>
+      </div>
+      <div class="members-count">
+        {{ courseMembersLoading ? 'Chargement...' : (courseMembers.length + ' etudiant' + (courseMembers.length > 1 ? 's' : '')) }}
+      </div>
+    </div>
+
+    <div *ngIf="courseMembersLoading" class="members-state">Chargement...</div>
+    <div *ngIf="!courseMembersLoading && courseMembersError" class="members-state members-state--error">
+      {{ courseMembersError }}
+    </div>
+    <div *ngIf="!courseMembersLoading && !courseMembersError && !courseMembers.length" class="members-state">
+      Aucun etudiant trouve pour cette selection.
+    </div>
+
+    <div *ngIf="!courseMembersLoading && !courseMembersError && courseMembers.length" class="members-grid">
+      <article class="member-card" *ngFor="let member of courseMembers">
+        <div class="member-card__avatar">
+          <img
+            *ngIf="member.avatarDataUrl"
+            [src]="member.avatarDataUrl"
+            [alt]="member.fullName"
+            class="member-card__avatar-image"
+          />
+          <span *ngIf="!member.avatarDataUrl">{{ courseMemberInitials(member) }}</span>
+        </div>
+        <div class="member-card__body">
+          <strong>{{ member.fullName }}</strong>
+          <span>Etudiant</span>
+          <small *ngIf="member.className">{{ member.className }}</small>
+        </div>
+      </article>
+    </div>
+  </div>
+</div>
+
+<div class="preview-overlay" *ngIf="selectedPreviewItem">
+  <div class="preview-card">
+    <div class="preview-topbar">
+      <div class="preview-breadcrumb">
+        Sommaire >
+        {{ selectedPreviewItem.chapterId || (selectedPreviewItem.type === 'Quiz' && selectedPreviewItem.quizDisplayMode === 'standalone' ? 'Quiz independant' : 'Apercu') }}
+      </div>
+      <button class="preview-close" (click)="closePreview()">
+        <span class="close-mark" aria-hidden="true">X</span>
+      </button>
+    </div>
+    <div class="preview-title">
+      <h2>{{ selectedPreviewItem.title }}</h2>
+    </div>
+    <div class="preview-body">
+      <div class="preview-toolbar">
+        <span>Page 1</span>
+        <div class="preview-actions">
+          <i class="fa-solid fa-minus"></i>
+          <i class="fa-solid fa-plus"></i>
+          <i class="fa-solid fa-expand"></i>
+        </div>
+      </div>
+      <div
+        *ngIf="isQuizItem(selectedPreviewItem) && previewQuizQuestions(selectedPreviewItem).length"
+        class="quiz-preview"
+      >
+        <div
+          *ngFor="let question of previewQuizQuestions(selectedPreviewItem); let index = index"
+          class="quiz-preview-question"
+        >
+          <div class="quiz-preview-header">
+            <div class="quiz-preview-index">{{ index + 1 }}</div>
+            <div>
+              <div class="quiz-preview-type">{{ quizQuestionTypeLabel(question) }}</div>
+              <h3>{{ question.prompt }}</h3>
+            </div>
+          </div>
+
+          <div class="quiz-preview-options">
+            <div
+              *ngFor="let option of question.options"
+              class="quiz-preview-option"
+              [class.correct]="isCorrectQuizOption(question, option.label)"
+            >
+              <div class="quiz-option-badge">{{ option.label }}</div>
+              <div class="quiz-option-text">
+                <strong>{{ option.text }}</strong>
+                <small *ngIf="isCorrectQuizOption(question, option.label)">
+                  Bonne reponse
+                </small>
+              </div>
+            </div>
+          </div>
+
+          <p *ngIf="question.explanation" class="quiz-preview-explanation">
+            {{ question.explanation }}
+          </p>
+        </div>
+      </div>
+      <div
+        class="preview-placeholder"
+        *ngIf="(isQuizItem(selectedPreviewItem) && !previewQuizQuestions(selectedPreviewItem).length) || (!isQuizItem(selectedPreviewItem) && !previewSource(selectedPreviewItem))"
+      >
+        <i class="fa-regular fa-file-lines"></i>
+        <p>{{ selectedPreviewItem.fileName || selectedPreviewItem.title }}</p>
+        <small *ngIf="!isQuizItem(selectedPreviewItem)">
+          Apercu indisponible: aucun fichier lie n'est configure.
+        </small>
+        <small *ngIf="isQuizItem(selectedPreviewItem)">
+          Apercu quiz indisponible: aucune question n'a ete extraite depuis le fichier.
+        </small>
+      </div>
+      <video
+        *ngIf="!isQuizItem(selectedPreviewItem) && previewVideoUrl(selectedPreviewItem)"
+        class="preview-video"
+        controls
+        preload="metadata"
+        [src]="previewVideoUrl(selectedPreviewItem)"
+      ></video>
+      <iframe
+        *ngIf="!isQuizItem(selectedPreviewItem) && previewSource(selectedPreviewItem) && !previewVideoUrl(selectedPreviewItem)"
+        class="preview-frame"
+        [src]="previewSource(selectedPreviewItem)"
+        title="Apercu du document"
+      ></iframe>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="wizard-modal-overlay" *ngIf="showModal" (click)="closeModal()">
+  <section class="wizard-modal-panel" (click)="$event.stopPropagation()">
+    <div class="wizard-loading-overlay" *ngIf="isWizardBusy">
+      <div class="wizard-loading-card">
+        <div class="wizard-loading-spinner" aria-hidden="true"></div>
+        <strong>{{ wizardLoadingMessage }}</strong>
+        <p>Merci de patienter quelques secondes.</p>
+      </div>
+    </div>
+
+    <div class="wizard-modal-header">
+      <h3 class="wizard-modal-title">{{ wizardModalTitle }}</h3>
+      <button class="close-button wizard-close-button" type="button" aria-label="Fermer" (click)="closeModal()" [disabled]="isWizardBusy">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+
+    <div class="progress-bar-wizard">
+      <div class="progress-filled" [style.width]="(isSingleStepWizardMode ? 100 : progress) + '%'" aria-label="Progression"></div>
+    </div>
+
+    <div class="step-labels wizard-step-labels" *ngIf="!isSingleStepWizardMode; else singleStepLabel">
+      <div [class.active]="currentStep >= 1">1. Cours & Chapitre</div>
+      <div [class.active]="currentStep >= 2">2. Partie</div>
+      <div [class.active]="currentStep >= 3">3. Document</div>
+      <div [class.active]="currentStep >= 4">4. Video</div>
+      <div [class.active]="currentStep >= 5">5. Quiz</div>
+      <div [class.active]="currentStep >= 6">6. Apercu</div>
+    </div>
+
+    <ng-template #singleStepLabel>
+      <div class="step-labels wizard-step-labels wizard-step-labels--single">
+        <div class="active">{{ singleStepWizardLabel }}</div>
+      </div>
+    </ng-template>
+
+    <div class="wizard-form-content">
+      <div *ngIf="currentStep === 1" class="step-block">
+        <p class="step-subtitle">Etape 1 sur 5 - Cours et Chapitre</p>
+
+        <div class="split-row" *ngIf="!addingChapterFromCourseMenu">
+          <div class="form-field">
+            <div class="wizard-label-with-voice">
+              <label>Cours</label>
+              <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('course')" aria-label="Lire l'aide du champ cours">
+                <mat-icon>{{ isWizardVoiceActive('course') ? 'volume_up' : 'volume_off' }}</mat-icon>
+              </button>
+            </div>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="wizard-material-field">
+              <mat-select [(ngModel)]="contentForm.selectedCourse" (ngModelChange)="setCourse($event)" [disabled]="!!selectedCourseView" panelClass="wizard-select-panel">
+                <mat-option value="" disabled>Selectionner un cours</mat-option>
+                <mat-option *ngFor="let c of courses" [value]="c">{{ c }}</mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+        </div>
+
+        <div class="split-row" *ngIf="!isPartEditOnlyMode">
+          <div class="radio-group wizard-toggle-group">
+            <button type="button" [class.selected]="contentForm.chapterMode === 'existing'" (click)="contentForm.chapterMode = 'existing'">Existant</button>
+            <button type="button" [class.selected]="contentForm.chapterMode === 'new'" (click)="contentForm.chapterMode = 'new'">Nouveau</button>
+          </div>
+
+          <div class="form-field">
+            <div class="wizard-label-with-voice">
+              <label>Chapitre</label>
+              <button type="button" class="wizard-voice-button" *ngIf="contentForm.chapterMode === 'new'" (click)="toggleWizardDictation('newChapter')" aria-label="Activer ou desactiver la dictee vocale du champ chapitre">
+                <mat-icon>{{ isWizardDictationActive('newChapter') ? 'mic' : 'mic_off' }}</mat-icon>
+              </button>
+              <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('chapter')" aria-label="Lire l'aide du champ chapitre">
+                <mat-icon>{{ isWizardVoiceActive('chapter') ? 'volume_up' : 'volume_off' }}</mat-icon>
+              </button>
+            </div>
+            <mat-form-field *ngIf="contentForm.chapterMode === 'existing'" appearance="outline" subscriptSizing="dynamic" class="wizard-material-field">
+              <mat-select [(ngModel)]="contentForm.selectedChapter" (ngModelChange)="setChapter($event)" panelClass="wizard-select-panel">
+                <mat-option value="" disabled>Selectionner un chapitre</mat-option>
+                <mat-option *ngFor="let c of chaptersByCourse[contentForm.selectedCourse] || []" [value]="c">{{ c }}</mat-option>
+              </mat-select>
+            </mat-form-field>
+            <input *ngIf="contentForm.chapterMode === 'new'" [(ngModel)]="contentForm.newChapter" placeholder="Nom du nouveau chapitre" />
+          </div>
+        </div>
+
+        <div class="recap-box wizard-recap-box">
+          <strong>Recapitulatif :</strong><br>
+          Cours: {{ contentForm.courseMode === 'existing' ? contentForm.selectedCourse : contentForm.newCourse || '(non choisi)' }}<br>
+          Chapitre: {{ contentForm.chapterMode === 'existing' ? contentForm.selectedChapter : contentForm.newChapter || '(non choisi)' }}
+        </div>
+      </div>
+
+      <div *ngIf="currentStep === 2" class="step-block">
+        <p class="step-subtitle">{{ isPartEditOnlyMode ? 'Modifier le nom de la partie' : 'Etape 2 sur 5 - Partie' }}</p>
+
+        <div class="split-row" *ngIf="!isPartEditOnlyMode">
+          <div class="radio-group wizard-toggle-group">
+            <button type="button" [class.selected]="contentForm.partMode === 'existing'" (click)="contentForm.partMode = 'existing'">Existante</button>
+            <button type="button" [class.selected]="contentForm.partMode === 'new'" (click)="contentForm.partMode = 'new'">Nouvelle</button>
+          </div>
+
+          <div class="form-field">
+            <div class="wizard-label-with-voice">
+              <label>Partie</label>
+              <button type="button" class="wizard-voice-button" *ngIf="contentForm.partMode === 'new'" (click)="toggleWizardDictation('newPart')" aria-label="Activer ou desactiver la dictee vocale du champ partie">
+                <mat-icon>{{ isWizardDictationActive('newPart') ? 'mic' : 'mic_off' }}</mat-icon>
+              </button>
+              <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('part')" aria-label="Lire l'aide du champ partie">
+                <mat-icon>{{ isWizardVoiceActive('part') ? 'volume_up' : 'volume_off' }}</mat-icon>
+              </button>
+            </div>
+            <mat-form-field *ngIf="contentForm.partMode === 'existing'" appearance="outline" subscriptSizing="dynamic" class="wizard-material-field">
+              <mat-select [(ngModel)]="contentForm.selectedPart" panelClass="wizard-select-panel">
+                <mat-option value="" disabled>Selectionner une partie</mat-option>
+                <mat-option *ngFor="let p of partsByChapter[(contentForm.courseMode === 'existing' ? contentForm.selectedCourse : contentForm.newCourse) + '|' + (contentForm.chapterMode === 'existing' ? contentForm.selectedChapter : contentForm.newChapter)] || []" [value]="p">{{ p }}</mat-option>
+              </mat-select>
+            </mat-form-field>
+
+            <input *ngIf="contentForm.partMode === 'new'" [(ngModel)]="contentForm.newPart" placeholder="Nom de nouvelle partie" />
+          </div>
+        </div>
+
+        <div class="form-field" *ngIf="isPartEditOnlyMode">
+          <div class="wizard-label-with-voice">
+            <label>Partie</label>
+            <button type="button" class="wizard-voice-button" (click)="toggleWizardDictation('newPart')" aria-label="Activer ou desactiver la dictee vocale du champ partie">
+              <mat-icon>{{ isWizardDictationActive('newPart') ? 'mic' : 'mic_off' }}</mat-icon>
+            </button>
+            <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('part')" aria-label="Lire l'aide du champ partie">
+              <mat-icon>{{ isWizardVoiceActive('part') ? 'volume_up' : 'volume_off' }}</mat-icon>
+            </button>
+          </div>
+          <input type="text" [(ngModel)]="contentForm.selectedPart" placeholder="Modifier le nom de la partie" />
+        </div>
+
+        <div class="recap-box wizard-recap-box">
+          <strong>Recapitulatif :</strong><br>
+          Partie: {{ isPartEditOnlyMode ? (contentForm.selectedPart || '(non choisie)') : (contentForm.partMode === 'existing' ? contentForm.selectedPart : contentForm.newPart || '(non choisie)') }}
+        </div>
+      </div>
+
+      <div *ngIf="currentStep === 3" class="step-block">
+        <p class="step-subtitle">{{ isSingleContentEditMode ? 'Modifier le document' : 'Etape 3 sur 5 - Document de cours' }}</p>
+        <div class="form-field">
+          <div class="wizard-label-with-voice">
+            <label>Document de cours (PDF, DOCX)</label>
+            <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('document')" aria-label="Lire l'aide du champ document">
+              <mat-icon>{{ isWizardVoiceActive('document') ? 'volume_up' : 'volume_off' }}</mat-icon>
+            </button>
+          </div>
+          <input class="wizard-file-input" type="file" accept=".pdf,.docx" (change)="handleDocumentInput($event)" />
+          <p class="file-name" *ngIf="contentForm.documentFileName">{{ contentForm.documentFileName }}</p>
+        </div>
+      </div>
+
+      <div *ngIf="currentStep === 4" class="step-block">
+        <p class="step-subtitle">{{ isSingleContentEditMode ? 'Modifier la video' : 'Etape 4 sur 5 - Video' }}</p>
+        <div class="form-field">
+          <div class="wizard-label-with-voice">
+            <label>Video (MP4, MOV, AVI, WebM)</label>
+            <button
+              type="button"
+              class="wizard-voice-button wizard-clear-button"
+              *ngIf="contentForm.videoFileName"
+              (click)="clearVideoFileSelection()"
+              aria-label="Supprimer la video choisie"
+              title="Supprimer la video choisie"
+            >
+              <mat-icon>delete</mat-icon>
+            </button>
+            <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('videoFile')" aria-label="Lire l'aide du champ video">
+              <mat-icon>{{ isWizardVoiceActive('videoFile') ? 'volume_up' : 'volume_off' }}</mat-icon>
+            </button>
+          </div>
+          <input class="wizard-file-input" type="file" accept=".mp4,.mov,.avi,.webm,.mkv" (change)="handleVideoInput($event)" />
+          <p class="file-name" *ngIf="contentForm.videoFileName">{{ contentForm.videoFileName }}</p>
+        </div>
+        <div class="form-field">
+          <div class="wizard-label-with-voice">
+            <label>Lien video (YouTube, Vimeo...)</label>
+            <button
+              type="button"
+              class="wizard-voice-button wizard-clear-button"
+              *ngIf="contentForm.videoLink"
+              (click)="clearVideoLink()"
+              aria-label="Effacer le lien video"
+              title="Effacer le lien video"
+            >
+              <mat-icon>delete</mat-icon>
+            </button>
+            <button type="button" class="wizard-voice-button" (click)="toggleWizardDictation('videoLink')" aria-label="Activer ou desactiver la dictee vocale du champ lien video">
+              <mat-icon>{{ isWizardDictationActive('videoLink') ? 'mic' : 'mic_off' }}</mat-icon>
+            </button>
+            <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('videoLink')" aria-label="Lire l'aide du champ lien video">
+              <mat-icon>{{ isWizardVoiceActive('videoLink') ? 'volume_up' : 'volume_off' }}</mat-icon>
+            </button>
+          </div>
+          <input type="url" [(ngModel)]="contentForm.videoLink" placeholder="https://www.youtube.com/watch?v=..." />
+        </div>
+      </div>
+
+      <div *ngIf="currentStep === 5" class="step-block">
+        <p class="step-subtitle">Etape 5 sur 6 - Configuration du Quiz</p>
+        <div class="form-field" *ngIf="creationMode === 'quiz_only'">
+          <div class="wizard-label-with-voice">
+            <label>Cours cible</label>
+          </div>
+          <mat-form-field appearance="outline" subscriptSizing="dynamic" class="wizard-material-field">
+            <mat-select
+              [(ngModel)]="contentForm.selectedCourse"
+              (ngModelChange)="clearQuizFieldError('selectedCourse')"
+              panelClass="wizard-select-panel"
+            >
+              <mat-option *ngFor="let course of courses" [value]="course">{{ course }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+          <div class="field-error" *ngIf="getQuizFieldError('selectedCourse')">{{ getQuizFieldError('selectedCourse') }}</div>
+          <small class="field-hint">
+            Ce quiz sera affiche directement dans le cours, hors chapitre et hors partie.
+          </small>
+        </div>
+        <div class="form-field">
+          <div class="wizard-label-with-voice">
+            <label>Type de quiz</label>
+            <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('quizMode')" aria-label="Lire l'aide du champ type de quiz">
+              <mat-icon>{{ isWizardVoiceActive('quizMode') ? 'volume_up' : 'volume_off' }}</mat-icon>
+            </button>
+          </div>
+          <div class="radio-group wizard-toggle-group">
+            <button
+              type="button"
+              [class.selected]="contentForm.quizMode === 'existing'"
+              (click)="selectQuizMode('existing')"
+            >
+              Quiz existant
+            </button>
+            <button
+              type="button"
+              [class.selected]="contentForm.quizMode === 'generated'"
+              (click)="selectQuizMode('generated')"
+            >
+              Generation automatique
+            </button>
+          </div>
+          <div class="field-error" *ngIf="getQuizFieldError('quizMode')">{{ getQuizFieldError('quizMode') }}</div>
+        </div>
+
+        <div class="form-field">
+          <div class="wizard-label-with-voice">
+            <label>Titre du quiz</label>
+            <button type="button" class="wizard-voice-button" (click)="toggleWizardDictation('quizTitle')" aria-label="Activer ou desactiver la dictee vocale du champ titre du quiz">
+              <mat-icon>{{ isWizardDictationActive('quizTitle') ? 'mic' : 'mic_off' }}</mat-icon>
+            </button>
+            <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('quizTitle')" aria-label="Lire l'aide du champ titre du quiz">
+              <mat-icon>{{ isWizardVoiceActive('quizTitle') ? 'volume_up' : 'volume_off' }}</mat-icon>
+            </button>
+          </div>
+          <input type="text" [(ngModel)]="contentForm.quizTitle" (ngModelChange)="clearQuizFieldError('quizTitle')" placeholder="Ex: Quiz - Jointures SQL" />
+          <div class="field-error" *ngIf="getQuizFieldError('quizTitle')">{{ getQuizFieldError('quizTitle') }}</div>
+        </div>
+
+        <div class="form-field">
+          <div class="wizard-label-with-voice">
+            <label>Description du quiz</label>
+            <button type="button" class="wizard-voice-button" (click)="toggleWizardDictation('quizDescription')" aria-label="Activer ou desactiver la dictee vocale du champ description du quiz">
+              <mat-icon>{{ isWizardDictationActive('quizDescription') ? 'mic' : 'mic_off' }}</mat-icon>
+            </button>
+            <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('quizDescription')" aria-label="Lire l'aide du champ description du quiz">
+              <mat-icon>{{ isWizardVoiceActive('quizDescription') ? 'volume_up' : 'volume_off' }}</mat-icon>
+            </button>
+          </div>
+          <textarea [(ngModel)]="contentForm.quizDescription" (ngModelChange)="clearQuizFieldError('quizDescription')" placeholder="Decrivez les objectifs d'evaluation de ce quiz"></textarea>
+          <div class="field-error" *ngIf="getQuizFieldError('quizDescription')">{{ getQuizFieldError('quizDescription') }}</div>
+        </div>
+
+        <div *ngIf="contentForm.quizMode === 'existing'" class="form-field">
+          <div class="wizard-label-with-voice">
+            <label>Fichier du quiz (PDF ou Word)</label>
+            <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('quizFile')" aria-label="Lire l'aide du champ fichier du quiz">
+              <mat-icon>{{ isWizardVoiceActive('quizFile') ? 'volume_up' : 'volume_off' }}</mat-icon>
+            </button>
+          </div>
+          <input class="wizard-file-input" type="file" accept=".pdf,.doc,.docx" (change)="handleQuizInput($event)" />
+          <p class="file-name" *ngIf="contentForm.quizFileName">{{ contentForm.quizFileName }}</p>
+          <div class="field-error" *ngIf="getQuizFieldError('quizFile')">{{ getQuizFieldError('quizFile') }}</div>
+          <small class="field-hint">
+            Le fichier sera disponible sur la plateforme et un quiz interactif sera aussi cree pour les etudiants.
+          </small>
+        </div>
+
+        <div *ngIf="contentForm.quizMode === 'existing'" class="form-field">
+          <div class="wizard-label-with-voice">
+            <label>Niveau de difficulte</label>
+            <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('quizDifficulty')" aria-label="Lire l'aide du champ niveau de difficulte">
+              <mat-icon>{{ isWizardVoiceActive('quizDifficulty') ? 'volume_up' : 'volume_off' }}</mat-icon>
+            </button>
+          </div>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="wizard-material-field">
+              <mat-select [(ngModel)]="contentForm.quizDifficulty" (ngModelChange)="clearQuizFieldError('quizDifficulty')" panelClass="wizard-select-panel">
+                <mat-option value="facile">Facile</mat-option>
+                <mat-option value="moyen">Moyen</mat-option>
+                <mat-option value="difficile">Difficile</mat-option>
+              </mat-select>
+            </mat-form-field>
+            <div class="field-error" *ngIf="getQuizFieldError('quizDifficulty')">{{ getQuizFieldError('quizDifficulty') }}</div>
+        </div>
+
+        <div *ngIf="contentForm.quizMode === 'generated'" class="grid-2">
+          <div class="form-field">
+            <div class="wizard-label-with-voice">
+              <label>Niveau de difficulte</label>
+              <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('quizDifficulty')" aria-label="Lire l'aide du champ niveau de difficulte">
+                <mat-icon>{{ isWizardVoiceActive('quizDifficulty') ? 'volume_up' : 'volume_off' }}</mat-icon>
+              </button>
+            </div>
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="wizard-material-field">
+              <mat-select [(ngModel)]="contentForm.quizDifficulty" (ngModelChange)="clearQuizFieldError('quizDifficulty')" panelClass="wizard-select-panel">
+                <mat-option value="facile">Facile</mat-option>
+                <mat-option value="moyen">Moyen</mat-option>
+                <mat-option value="difficile">Difficile</mat-option>
+              </mat-select>
+            </mat-form-field>
+            <div class="field-error" *ngIf="getQuizFieldError('quizDifficulty')">{{ getQuizFieldError('quizDifficulty') }}</div>
+          </div>
+        </div>
+
+        <div *ngIf="contentForm.quizMode === 'generated'" class="form-field">
+          <div class="wizard-label-with-voice">
+            <label>Chapitre source depuis votre PC</label>
+            <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('quizSources')" aria-label="Lire l'aide du champ chapitres sources">
+              <mat-icon>{{ isWizardVoiceActive('quizSources') ? 'volume_up' : 'volume_off' }}</mat-icon>
+            </button>
+          </div>
+          <input
+            class="wizard-file-input"
+            type="file"
+            accept=".pdf,.docx"
+            (change)="handleQuizChapterInputs($event)"
+          />
+          <div class="field-error" *ngIf="getQuizFieldError('quizChapterFiles')">{{ getQuizFieldError('quizChapterFiles') }}</div>
+          <small class="field-hint">
+            Importez un fichier chapitre PDF ou DOCX depuis votre ordinateur. Le quiz sera genere a partir de ce fichier.
+          </small>
+          <div *ngIf="contentForm.quizChapterFileNames.length" class="recap-box wizard-recap-box">
+            <strong>Chapitre importe :</strong><br>
+            {{ contentForm.quizChapterFileNames[0] }}
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-field">
+            <div class="wizard-label-with-voice">
+              <label>Nombre de questions</label>
+              <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('quizQuestions')" aria-label="Lire l'aide du champ nombre de questions">
+                <mat-icon>{{ isWizardVoiceActive('quizQuestions') ? 'volume_up' : 'volume_off' }}</mat-icon>
+              </button>
+            </div>
+            <input type="number" [(ngModel)]="contentForm.quizQuestions" (ngModelChange)="clearQuizFieldError('quizQuestions')" min="1" />
+            <div class="field-error" *ngIf="getQuizFieldError('quizQuestions')">{{ getQuizFieldError('quizQuestions') }}</div>
+          </div>
+          <div class="form-field">
+            <div class="wizard-label-with-voice">
+              <label>Tentatives max</label>
+              <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('quizAttempts')" aria-label="Lire l'aide du champ tentatives max">
+                <mat-icon>{{ isWizardVoiceActive('quizAttempts') ? 'volume_up' : 'volume_off' }}</mat-icon>
+              </button>
+            </div>
+            <input type="number" [(ngModel)]="contentForm.quizAttempts" (ngModelChange)="clearQuizFieldError('quizAttempts')" min="1" />
+            <div class="field-error" *ngIf="getQuizFieldError('quizAttempts')">{{ getQuizFieldError('quizAttempts') }}</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-field">
+            <div class="wizard-label-with-voice">
+              <label>Score de reussite (%)</label>
+              <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('quizScore')" aria-label="Lire l'aide du champ score de reussite">
+                <mat-icon>{{ isWizardVoiceActive('quizScore') ? 'volume_up' : 'volume_off' }}</mat-icon>
+              </button>
+            </div>
+            <input type="number" [(ngModel)]="contentForm.quizScore" (ngModelChange)="clearQuizFieldError('quizScore')" min="0" max="100" />
+            <div class="field-error" *ngIf="getQuizFieldError('quizScore')">{{ getQuizFieldError('quizScore') }}</div>
+          </div>
+          <div class="form-field">
+            <div class="wizard-label-with-voice">
+              <label>Date limite</label>
+              <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('quizDueDate')" aria-label="Lire l'aide du champ date limite">
+                <mat-icon>{{ isWizardVoiceActive('quizDueDate') ? 'volume_up' : 'volume_off' }}</mat-icon>
+              </button>
+            </div>
+            <input
+              type="date"
+              [(ngModel)]="contentForm.quizDueDate"
+              (ngModelChange)="clearQuizFieldError('quizDueDate')"
+              [min]="minQuizDueDate"
+              placeholder="jj/mm/aaaa"
+            />
+            <div class="field-error" *ngIf="getQuizFieldError('quizDueDate')">{{ getQuizFieldError('quizDueDate') }}</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-field">
+            <div class="wizard-label-with-voice">
+              <label>Heure limite</label>
+              <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('quizDueTime')" aria-label="Lire l'aide du champ heure limite">
+                <mat-icon>{{ isWizardVoiceActive('quizDueTime') ? 'volume_up' : 'volume_off' }}</mat-icon>
+              </button>
+            </div>
+            <input
+              type="time"
+              [(ngModel)]="contentForm.quizDueTime"
+              (ngModelChange)="clearQuizFieldError('quizDueTime')"
+              placeholder="--:--"
+            />
+            <div class="field-error" *ngIf="getQuizFieldError('quizDueTime')">{{ getQuizFieldError('quizDueTime') }}</div>
+          </div>
+          <div class="form-field">
+            <div class="wizard-label-with-voice">
+              <label>Chronometre (minutes)</label>
+              <button type="button" class="wizard-voice-button" (click)="announceWizardHelp('quizDuration')" aria-label="Lire l'aide du champ chronometre">
+                <mat-icon>{{ isWizardVoiceActive('quizDuration') ? 'volume_up' : 'volume_off' }}</mat-icon>
+              </button>
+            </div>
+            <input
+              type="number"
+              [(ngModel)]="contentForm.quizDurationMinutes"
+              (ngModelChange)="clearQuizFieldError('quizDurationMinutes')"
+              min="1"
+              max="1440"
+              placeholder="Ex: 15"
+            />
+            <div class="field-error" *ngIf="getQuizFieldError('quizDurationMinutes')">{{ getQuizFieldError('quizDurationMinutes') }}</div>
+            <small class="field-hint">
+              Exemple: 15 signifie que l'etudiant dispose de 15 minutes pour terminer le quiz.
+            </small>
+          </div>
+        </div>
+
+      </div>
+
+      <div *ngIf="currentStep === 6" class="step-block">
+        <p class="step-subtitle">Etape 6 sur 6 - Apercu du Quiz</p>
+
+        <div class="form-field">
+          <div class="quiz-editor-header">
+            <div>
+              <label>Questions du quiz</label>
+              <small class="field-hint">
+                Avant l'enregistrement, l'enseignant peut ajouter, modifier ou supprimer des questions.
+              </small>
+            </div>
+            <button type="button" class="btn-outline quiz-editor-add-btn" (click)="addEditableQuizQuestion()">
+              Ajouter une question
+            </button>
+          </div>
+
+          <div class="field-error" *ngIf="getQuizFieldError('quizQuestionEditor')">{{ getQuizFieldError('quizQuestionEditor') }}</div>
+
+          <div class="quiz-editor-empty" *ngIf="!editableQuizQuestions.length">
+            Aucune question modifiable pour le moment. Ajoutez-en une manuellement ou importez/generez d'abord le quiz.
+          </div>
+
+          <div class="quiz-editor-list" *ngIf="editableQuizQuestions.length">
+            <div
+              class="quiz-editor-card"
+              *ngFor="let question of editableQuizQuestions; let questionIndex = index"
+              [id]="'quiz-editor-question-' + question.id"
+            >
+              <div class="quiz-editor-card__top">
+                <strong>Question {{ questionIndex + 1 }}</strong>
+                <button type="button" class="btn-outline danger quiz-editor-remove-btn" (click)="removeEditableQuizQuestion(questionIndex)">
+                  Supprimer
+                </button>
+              </div>
+
+              <div class="form-field">
+                <label>Enonce</label>
+                <textarea
+                  [(ngModel)]="question.prompt"
+                  [ngModelOptions]="{ standalone: true }"
+                  (ngModelChange)="clearQuizFieldError('quizQuestionEditor')"
+                  placeholder="Saisissez la question"
+                ></textarea>
+              </div>
+
+              <div class="grid-2">
+                <div class="form-field">
+                  <label>Type de question</label>
+                  <select
+                    [(ngModel)]="question.type"
+                    [ngModelOptions]="{ standalone: true }"
+                    (ngModelChange)="onEditableQuizQuestionTypeChange(questionIndex)"
+                  >
+                    <option value="single">Choix unique</option>
+                    <option value="multiple">Choix multiple</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label>Explication</label>
+                  <input
+                    type="text"
+                    [(ngModel)]="question.explanation"
+                    [ngModelOptions]="{ standalone: true }"
+                    (ngModelChange)="clearQuizFieldError('quizQuestionEditor')"
+                    placeholder="Explication facultative"
+                  />
+                </div>
+              </div>
+
+              <div class="quiz-editor-options">
+                <div class="quiz-editor-option" *ngFor="let option of question.options">
+                  <button
+                    type="button"
+                    class="quiz-editor-correct-toggle"
+                    [class.quiz-editor-correct-toggle--active]="isEditableQuizCorrectAnswer(question, option.label)"
+                    (click)="toggleEditableQuizCorrectAnswer(questionIndex, option.label)"
+                  >
+                    {{ option.label }}
+                  </button>
+                  <input
+                    type="text"
+                    [(ngModel)]="option.text"
+                    [ngModelOptions]="{ standalone: true }"
+                    (ngModelChange)="clearQuizFieldError('quizQuestionEditor')"
+                    [placeholder]="'Reponse ' + option.label"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="wizard-preview-block">
+          <div class="quiz-editor-header wizard-preview-block__header">
+            <div>
+              <label>Apercu du quiz avant enregistrement</label>
+              <small class="field-hint">
+                Voici le rendu du quiz tel qu'il sera visible. Vous pouvez encore modifier les questions avant d'enregistrer.
+              </small>
+            </div>
+          </div>
+
+          <div class="wizard-preview-summary recap-box wizard-recap-box">
+            <strong>{{ contentForm.quizTitle || 'Quiz sans titre' }}</strong><br>
+            Cours: {{ contentForm.courseMode === 'existing' ? contentForm.selectedCourse : contentForm.newCourse }}<br>
+            <span *ngIf="contentForm.selectedChapter || contentForm.newChapter">
+              Chapitre: {{ contentForm.chapterMode === 'existing' ? contentForm.selectedChapter : contentForm.newChapter }}<br>
+            </span>
+            <span *ngIf="contentForm.selectedPart || contentForm.newPart">
+              Partie: {{ contentForm.partMode === 'existing' ? contentForm.selectedPart : contentForm.newPart }}<br>
+            </span>
+            Type de quiz: {{ contentForm.quizMode === 'existing' ? 'Quiz existant' : 'Quiz auto-genere' }}<br>
+            Niveau: {{ contentForm.quizDifficulty }}<br>
+            Date limite: {{ contentForm.quizDueDate || '(non definie)' }} {{ contentForm.quizDueTime || '' }}<br>
+            Chronometre: {{ contentForm.quizDurationMinutes ? (contentForm.quizDurationMinutes + ' min') : '(non defini)' }}
+          </div>
+
+          <div class="quiz-editor-empty" *ngIf="!editableQuizQuestions.length">
+            L'aperçu du quiz apparaitra ici des qu'au moins une question est disponible.
+          </div>
+
+          <div class="quiz-preview wizard-quiz-preview" *ngIf="editableQuizQuestions.length">
+            <div
+              *ngFor="let question of editableQuizQuestions; let index = index"
+              class="quiz-preview-question"
+            >
+              <div class="quiz-preview-header">
+                <div class="quiz-preview-index">{{ index + 1 }}</div>
+                <div>
+                  <div class="quiz-preview-type">{{ quizQuestionTypeLabel(question) }}</div>
+                  <h3>{{ question.prompt || 'Question sans enonce' }}</h3>
+                </div>
+              </div>
+
+              <div class="quiz-preview-options">
+                <div
+                  *ngFor="let option of question.options"
+                  class="quiz-preview-option"
+                  [class.correct]="isEditableQuizCorrectAnswer(question, option.label)"
+                >
+                  <span class="quiz-option-badge">{{ option.label }}</span>
+                  <div class="quiz-option-text">
+                    <strong>{{ option.text || ('Reponse ' + option.label) }}</strong>
+                    <small *ngIf="isEditableQuizCorrectAnswer(question, option.label)">
+                      Bonne reponse
+                    </small>
+                  </div>
+                </div>
+              </div>
+
+              <p *ngIf="question.explanation" class="quiz-preview-explanation">
+                {{ question.explanation }}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="error wizard-error wizard-error-slot">
+        {{ displayedFormError || ' ' }}
+      </div>
+      <div class="sr-only" aria-live="polite" aria-atomic="true">{{ wizardVoiceMessage }}</div>
+    </div>
+
+    <div class="wizard-actions">
+      <button type="button" class="ghost-action" (click)="closeModal()" [disabled]="isWizardBusy">Annuler</button>
+      <button
+        type="button"
+        class="ghost-action wizard-secondary-action"
+        *ngIf="!isDirectEditMode"
+        (click)="goBack()"
+        [disabled]="currentStep === 1 || isWizardBusy"
+      >
+        Precedent
+      </button>
+      <button type="button" class="primary-action" (click)="onPrimaryAction()" [disabled]="isWizardBusy">
+        {{ primaryActionDisplayLabel }}
+      </button>
+    </div>
+
+  </section>
+</div>
+
+<div *ngIf="showDeleteModal" class="modal-backdrop" (click)="closeDeleteModal()">
+  <section class="modal-panel modal-panel--compact" (click)="$event.stopPropagation()">
+    <button type="button" class="close-button" (click)="closeDeleteModal()">
+      <mat-icon>close</mat-icon>
+    </button>
+
+    <div class="confirm-head">
+      <div class="confirm-icon">
+        <mat-icon>delete_forever</mat-icon>
+      </div>
+      <div>
+        <h3>{{ deleteModalTitle() }}</h3>
+        <p>{{ deleteModalMessage() }}</p>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="ghost-action" (click)="closeDeleteModal()">Annuler</button>
+      <button type="button" class="danger-action" (click)="confirmDeleteAction()">Supprimer</button>
+    </div>
+  </section>
+</div>
+
+<div *ngIf="showSuccessModal" class="modal-backdrop" (click)="closeSuccessModal()">
+  <section class="modal-panel modal-panel--compact modal-panel--success" (click)="$event.stopPropagation()">
+    <button type="button" class="close-button" (click)="closeSuccessModal()">
+      <mat-icon>close</mat-icon>
+    </button>
+
+    <div class="confirm-head">
+      <div class="confirm-icon confirm-icon--success">
+        <mat-icon>check_circle</mat-icon>
+      </div>
+      <div>
+        <h3>Operation reussie</h3>
+        <p>{{ successMessage }}</p>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="primary-action" (click)="closeSuccessModal()">Fermer</button>
+    </div>
+  </section>
+</div>
+
+
+
+
+

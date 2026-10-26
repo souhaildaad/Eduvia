@@ -1,70 +1,57 @@
-version: "3.9"
-
 services:
 
   frontend:
     build: ../EduVia-Frontend
     container_name: eduvia-frontend
     ports:
-      - "4200:4200"
+      - "4200:80"
     depends_on:
       - backend
+    restart: unless-stopped
 
   backend:
-    build: ../EduVia-Backend
+    build: ../EduVia django
     container_name: eduvia-backend
     ports:
       - "3000:3000"
-    depends_on:
-      - mongodb
-      - keycloak
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      default:
+        aliases:
+          - eduvia-backend
+    env_file:
+      - ../EduVia django/.env
     environment:
-      MONGO_URI: mongodb://mongodb:27017/eduvia
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-development-secret-change-me}
+      DJANGO_DEBUG: "false"
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,backend,eduvia-backend,host.docker.internal,*
+      FRONTEND_URL: http://localhost:4200
+      BACKEND_URL: http://localhost:3000
+      MONGODB_URI: ${MONGODB_URI:-mongodb://host.docker.internal:27017}
+      MONGODB_NAME: ${MONGODB_NAME:-eduvia}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    volumes:
+      - django_uploads:/app/uploads
+    command: sh -c "mkdir -p /app/uploads && cp -an /app/seed_uploads/. /app/uploads/ 2>/dev/null || true; python manage.py migrate --noinput && gunicorn EduVia.wsgi:application --bind 0.0.0.0:3000 --workers 3 --timeout 120"
+    restart: unless-stopped
 
-  ai:
-    build: ../EduVia-AI
-    container_name: eduvia-ai
-    ports:
-      - "5000:5000"
-
-  mongodb:
+  mongo:
     image: mongo:7
     container_name: eduvia-mongo
-    restart: always
     ports:
-      - "27017:27017"
+      - "27018:27017"
     volumes:
       - mongo_data:/data/db
-
-  postgres:
-    image: postgres:15
-    container_name: eduvia-postgres
-    restart: always
-    environment:
-      POSTGRES_USER: eduvia
-      POSTGRES_PASSWORD: eduvia
-      POSTGRES_DB: keycloak_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  keycloak:
-    image: quay.io/keycloak/keycloak:24.0.2
-    container_name: eduvia-keycloak
-    command: start-dev
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_db
-      KC_DB_USERNAME: eduvia
-      KC_DB_PASSWORD: eduvia
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
-    ports:
-      - "8080:8080"
-    depends_on:
-      - postgres
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
 
 volumes:
   mongo_data:
-  postgres_data:
+  django_uploads:

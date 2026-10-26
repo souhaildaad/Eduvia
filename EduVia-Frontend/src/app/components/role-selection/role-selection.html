@@ -1,0 +1,58 @@
+<div class="role-selection-container">
+  <div class="main-content">
+    <!-- Logo + slogan -->
+    <div class="header">
+      <div class="logo-wrapper">
+        <img src="logo.png" alt="EduVia Logo" class="logo-img">
+      </div>
+     
+      <h1 class="title">Eduvia</h1>
+      <p class="subtitle">Sélectionnez votre profil pour accéder au système</p>
+    </div>
+
+    <!-- Les 3 cartes -->
+    <div class="roles-grid">
+      <!-- Étudiant -->
+      <div class="role-card student" (click)="selectRole('student')">
+        <div class="icon-circle student-circle">
+          <mat-icon class="role-icon">school</mat-icon>
+        </div>
+        <h3>Étudiant</h3>
+        <p>
+          Évaluation IA, quiz adaptatifs,<br>
+          recommandations personnalisées,<br>
+          chatbot pédagogique
+        </p>
+        <button mat-flat-button class="access-btn student-btn">Accéder</button>
+      </div>
+
+      <!-- Enseignant -->
+      <div class="role-card teacher" (click)="selectRole('teacher')">
+        <div class="icon-circle teacher-circle">
+          <mat-icon class="role-icon">group</mat-icon>
+        </div>
+        <h3>Enseignant</h3>
+        <p>
+          Suivi des étudiants, gestion des<br>
+          contenus, envoi de rappels<br>
+          personnalisés
+        </p>
+        <button mat-flat-button class="access-btn teacher-btn">Accéder</button>
+      </div>
+
+      <!-- Administrateur -->
+      <div class="role-card admin" (click)="selectRole('admin')">
+        <div class="icon-circle admin-circle">
+          <mat-icon class="role-icon">shield</mat-icon>
+        </div>
+        <h3>Administrateur</h3>
+        <p>
+          Gestion des utilisateurs,<br>
+          supervision globale, statistiques<br>
+          de la plateforme
+        </p>
+        <button mat-flat-button class="access-btn admin-btn">Accéder</button>
+      </div>
+    </div>
+  </div>
+</div>

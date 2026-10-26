@@ -1,0 +1,21 @@
+# Binaries & Local tools
+kubectl
+minikube
+
+# Python / Django
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+db.sqlite3
+.env
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+.cache/
+
+# Heavy duplicate video uploads
+EduVia django/uploads/legacy-backend/
+EduVia django/uploads/*.mp4

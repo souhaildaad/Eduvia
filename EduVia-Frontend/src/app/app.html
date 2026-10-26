@@ -1,0 +1,57 @@
+<div class="app-container">
+  @if (transientNotificationMessage()) {
+    <div class="floating-warning" role="alert" aria-live="assertive">
+      <span>{{ transientNotificationMessage() }}</span>
+      <button type="button" (click)="dismissTransientNotification()">OK</button>
+    </div>
+  }
+
+  @if (isInitializing()) {
+    <div class="login-container">
+      <div class="login-card">
+        <div class="logo-wrapper">
+          <img src="logo.png" alt="EduVia logo" class="login-logo" />
+        </div>
+        <h2>Chargement de votre session</h2>
+        <p>Nous verifions votre connexion en cours...</p>
+      </div>
+    </div>
+  }
+
+  @else if (userRole() === null && selectedRole() === null) {
+    <app-role-selection (roleSelected)="onRoleSelected($event)" />
+  }
+
+  @else if (userRole() === null && selectedRole() !== null) {
+    <app-login
+      [role]="selectedRole()"
+      [mode]="publicAuthScreen()"
+      [errorMessage]="loginErrorMessage()"
+      [resetToken]="resetToken()"
+      [resetEmail]="resetEmail()"
+      [resetUserName]="resetUserName()"
+      (login)="onLogin($event)"
+      (faceLogin)="onFaceLogin($event)"
+      (forgotPasswordRequested)="onForgotPasswordRequested()"
+      (backRequested)="onBackToLogin()"
+      (resetCompleted)="onResetCompleted()" />
+  }
+
+  @else if (userRole() === 'student' && studentNeedsAssessment()) {
+    <app-ai-assessment
+      [studentName]="'Student User'"
+      (completed)="onAssessmentCompleted($event)" />
+  }
+
+  @else if (userRole() === 'student') {
+    <app-student-dashboard
+      [studentLevel]="studentAssessmentLevel()"
+      (logout)="onLogout()" />
+  }
+  @else if (userRole() === 'teacher') {
+    <app-teacher-dashboard (logout)="onLogout()" />
+  }
+  @else if (userRole() === 'admin') {
+    <app-admin-dashboard (logout)="onLogout()" />
+  }
+</div>

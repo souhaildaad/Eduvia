@@ -1,0 +1,51 @@
+services:
+  # 1. Backend Django / Gunicorn (API + Chatbot de cours)
+  - type: web
+    name: eduvia-backend
+    runtime: python
+    rootDir: EduVia django
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python manage.py migrate --noinput && gunicorn EduVia.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    healthCheckPath: /health/
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: ".onrender.com,.vercel.app,localhost,127.0.0.1"
+      - key: MONGODB_NAME
+        value: eduvia
+      - key: MONGODB_URI
+        sync: false
+
+  # 2. Frontend Angular (optionnel si vous n'utilisez pas Vercel)
+  - type: web
+    name: eduvia-frontend
+    runtime: static
+    rootDir: EduVia-Frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist/EduVia-Frontend/browser
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://eduvia-backend.onrender.com/api/*
+      - type: rewrite
+        source: /auth/*
+        destination: https://eduvia-backend.onrender.com/auth/*
+      - type: rewrite
+        source: /notifications*
+        destination: https://eduvia-backend.onrender.com/notifications*
+      - type: rewrite
+        source: /ai/*
+        destination: https://eduvia-backend.onrender.com/ai/*
+      - type: rewrite
+        source: /uploads/*
+        destination: https://eduvia-backend.onrender.com/uploads/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
+

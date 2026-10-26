@@ -1,0 +1,67 @@
+﻿<section class="clubs-panel">
+  <div class="clubs-panel__header">
+    <div>
+      <p class="clubs-panel__eyebrow">Clubs recommandes</p>
+      <h2>Choisis un club aligne avec ton parcours</h2>
+    </div>
+    <button type="button" class="clubs-panel__refresh" (click)="loadClubRecommendations()" [disabled]="isLoading">
+      Actualiser
+    </button>
+  </div>
+
+  <div *ngIf="isLoading" class="clubs-state">Chargement des recommandations...</div>
+  <div *ngIf="!isLoading && errorMessage" class="clubs-state clubs-state--error">{{ errorMessage }}</div>
+
+  <ng-container *ngIf="!isLoading && !errorMessage">
+    <div class="clubs-insights">
+      <div class="clubs-insights__summary">
+        <span>{{ sourceLabel }}</span>
+        <strong>{{ recommendations.length }} recommandations</strong>
+      </div>
+      <div class="clubs-course-list" *ngIf="studiedCourses.length > 0">
+        <span *ngFor="let course of studiedCourses.slice(0, 5)">{{ course.title }}</span>
+      </div>
+    </div>
+
+    <div class="clubs-grid clubs-grid--featured">
+      <article class="club-card club-card--featured" *ngFor="let club of recommendations">
+        <div class="club-card__topline">
+          <span>{{ club.category }}</span>
+          <strong>{{ club.recommendationRate }}%</strong>
+        </div>
+        <h3>{{ club.name }}</h3>
+        <p>{{ club.description }}</p>
+        <p class="club-card__reason">{{ club.recommendationReason }}</p>
+        <div class="club-card__tags" *ngIf="club.matchedCourses.length > 0">
+          <span *ngFor="let course of club.matchedCourses">{{ course }}</span>
+        </div>
+        <a *ngIf="club.email" [href]="'mailto:' + club.email" class="club-card__contact">Contacter</a>
+      </article>
+    </div>
+
+    <div class="clubs-tabs" aria-label="Filtrer les clubs par categorie">
+      <button
+        type="button"
+        *ngFor="let category of categories"
+        [class.is-active]="selectedCategory === category"
+        (click)="selectCategory(category)"
+      >
+        {{ category }}
+      </button>
+    </div>
+
+    <div class="clubs-grid">
+      <article class="club-card" *ngFor="let club of filteredClubs">
+        <div class="club-card__topline">
+          <span>{{ club.category }}</span>
+          <strong>{{ club.recommendationRate }}%</strong>
+        </div>
+        <h3>{{ club.name }}</h3>
+        <p>{{ club.description }}</p>
+        <div class="club-card__tags">
+          <span *ngFor="let activity of club.activities.slice(0, 3)">{{ activity }}</span>
+        </div>
+      </article>
+    </div>
+  </ng-container>
+</section>

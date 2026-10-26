@@ -1,0 +1,254 @@
+<div class="tracking-page">
+  <section class="hero-card">
+    <div class="hero-icon">
+      <mat-icon>groups</mat-icon>
+    </div>
+    <div>
+      <h2>Suivi des Etudiants</h2>
+      <p>
+        Consultez le niveau, les progres et les difficultes de vos etudiants.
+        Identifiez rapidement les etudiants a risque necessitant un accompagnement supplementaire.
+      </p>
+    </div>
+  </section>
+
+  <section class="filters-row">
+    <div class="risk-filter-chip" *ngIf="showAtRiskOnly">
+      <mat-icon>warning</mat-icon>
+      Etudiants a risque
+    </div>
+
+    <div class="search-field">
+      <mat-icon>search</mat-icon>
+      <input
+        type="text"
+        [ngModel]="searchQuery"
+        (ngModelChange)="onSearchChange($event)"
+        placeholder="Rechercher un etudiant..."
+      />
+    </div>
+
+    <mat-form-field appearance="outline" subscriptSizing="dynamic" class="class-filter-field">
+      <mat-select
+        [ngModel]="selectedClass"
+        (ngModelChange)="onClassChange($event)"
+        panelClass="student-tracking-select-panel"
+      >
+        <mat-option *ngFor="let option of classOptions" [value]="option.value">{{ option.label }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+  </section>
+
+  <section class="warning-card warning-card--neutral" *ngIf="loading">
+    <mat-icon>hourglass_top</mat-icon>
+    <p>Chargement des etudiants...</p>
+  </section>
+
+  <section class="warning-card warning-card--error" *ngIf="!loading && errorMessage">
+    <mat-icon>error</mat-icon>
+    <p>{{ errorMessage }}</p>
+  </section>
+
+  <section class="warning-card warning-card--neutral" *ngIf="!loading && !errorMessage && filteredStudents.length === 0">
+    <mat-icon>groups</mat-icon>
+    <p>Aucun etudiant correspondant a cet enseignant pour le moment.</p>
+  </section>
+
+  <div class="student-list">
+    <article class="student-card" *ngFor="let student of filteredStudents">
+      <div class="student-top">
+        <div class="student-head">
+          <div class="student-avatar">
+            <img *ngIf="student.avatarDataUrl" [src]="student.avatarDataUrl" [alt]="'Photo de ' + student.name" />
+            <span *ngIf="!student.avatarDataUrl">{{ studentInitials(student) }}</span>
+          </div>
+
+          <div class="student-title">
+            <h3>{{ student.name }}</h3>
+            <p>{{ student.level }}</p>
+          </div>
+        </div>
+
+        <button type="button" class="details-button" (click)="openStudentDetails(student)">
+          <mat-icon>visibility</mat-icon>
+          Details
+        </button>
+      </div>
+
+      <div class="student-metrics">
+        <div class="metric-block">
+          <p class="metric-label">Progression globale</p>
+          <div class="progress-track">
+            <div
+              class="progress-fill"
+              [ngClass]="progressClass(student.overallProgress)"
+              [style.width]="progressWidth(student.overallProgress)">
+            </div>
+          </div>
+          <span class="metric-value">{{ student.overallProgress }}%</span>
+        </div>
+
+        <div class="metric-block">
+          <p class="metric-label">Derniere activite</p>
+          <span class="last-activity">{{ student.lastActivity }}</span>
+        </div>
+
+        <div class="metric-block metric-block--level">
+          <p class="metric-label">Progression de niveau</p>
+          <div class="progress-track progress-track--level">
+            <div
+              class="progress-fill progress-fill--level"
+              [style.width]="progressWidth(student.levelProgress)">
+            </div>
+          </div>
+          <span class="metric-value">{{ student.levelProgress }}%</span>
+          <p class="metric-note">{{ student.levelProgressSummary }}</p>
+        </div>
+      </div>
+
+      <div class="difficulty-box" *ngIf="hasWeakTopics(student)">
+        <p class="difficulty-title">
+          <mat-icon>warning</mat-icon>
+          Chapitres / parties non termines
+        </p>
+        <div class="difficulty-tags">
+          <span class="difficulty-tag" *ngFor="let topic of limitedWeakTopics(student)">{{ topic }}</span>
+        </div>
+      </div>
+    </article>
+  </div>
+</div>
+
+<div class="dialog-backdrop" *ngIf="showDetailDialog && selectedStudent">
+  <div class="dialog-panel">
+    <div class="dialog-header">
+      <h3>Details de l'etudiant</h3>
+      <button type="button" class="close-button" (click)="closeStudentDetails()" aria-label="Fermer">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+
+    <div class="dialog-body">
+      <div class="profile-head">
+        <div class="profile-avatar">
+          <img *ngIf="selectedStudent.avatarDataUrl" [src]="selectedStudent.avatarDataUrl" [alt]="'Photo de ' + selectedStudent.name" />
+          <span *ngIf="!selectedStudent.avatarDataUrl">{{ studentInitials(selectedStudent) }}</span>
+        </div>
+        <div>
+          <h4>{{ selectedStudent.name }}</h4>
+          <p>{{ selectedStudent.level }}</p>
+        </div>
+      </div>
+
+      <div class="summary-grid">
+        <article class="summary-card">
+          <p>Progression globale</p>
+          <strong>{{ selectedStudent.overallProgress }}%</strong>
+        </article>
+        <article class="summary-card summary-card--level">
+          <p>Progression de niveau</p>
+          <strong>{{ selectedStudent.levelProgress }}%</strong>
+          <span>{{ selectedStudent.levelProgressSummary }}</span>
+        </article>
+      </div>
+
+      <section class="performance-section">
+        <h5>Cours et performances</h5>
+
+        <div class="course-performance-list">
+          <article class="course-performance-card" *ngFor="let course of selectedStudent.courses; trackBy: trackCourse">
+            <h6>{{ course.name }}</h6>
+
+            <div class="course-metrics">
+              <div>
+                <p class="metric-label">Progression</p>
+                <div class="progress-track">
+                  <div
+                    class="progress-fill"
+                    [ngClass]="progressClass(course.progress)"
+                    [style.width]="progressWidth(course.progress)">
+                  </div>
+                </div>
+                <span class="metric-value">{{ course.progress }}%</span>
+                <p class="metric-label" *ngIf="course.summary">{{ course.summary }}</p>
+              </div>
+
+              <div>
+                <p class="metric-label">Dernier quiz</p>
+                <span class="quiz-score">{{ selectedStudent.levelProgress }}%</span>
+                <p class="metric-label">{{ selectedStudent.levelProgressSummary }}</p>
+              </div>
+            </div>
+
+            <div *ngIf="course.weakTopics.length > 0">
+              <p class="metric-label">Chapitres / parties non termines :</p>
+              <div class="difficulty-tags">
+                <span class="difficulty-tag" *ngFor="let topic of course.weakTopics">{{ topic }}</span>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+    </div>
+
+    <div class="dialog-actions">
+      <button type="button" class="secondary-button" (click)="requestReminderForSelectedStudent()">
+        Envoyer un rappel
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="dialog-backdrop" *ngIf="showReminderTopicDialog && reminderTopicStudent">
+  <div class="dialog-panel dialog-panel--compact">
+    <div class="dialog-header">
+      <h3>Choisir les chapitres / parties</h3>
+      <button type="button" class="close-button" (click)="closeReminderTopicDialog()" aria-label="Fermer">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+
+    <div class="dialog-body">
+      <div class="profile-head">
+        <div class="profile-avatar">
+          <img *ngIf="reminderTopicStudent.avatarDataUrl" [src]="reminderTopicStudent.avatarDataUrl" [alt]="'Photo de ' + reminderTopicStudent.name" />
+          <span *ngIf="!reminderTopicStudent.avatarDataUrl">{{ studentInitials(reminderTopicStudent) }}</span>
+        </div>
+        <div>
+          <h4>{{ reminderTopicStudent.name }}</h4>
+          <p>{{ reminderTopicStudent.level }}</p>
+        </div>
+      </div>
+
+      <div class="topic-selection-head">
+        <p>Selectionnez les elements a rappeler.</p>
+        <button type="button" class="secondary-button" (click)="toggleAllReminderTopics()">
+          {{ selectedReminderTopics.length === allWeakTopics(reminderTopicStudent).length ? 'Tout deselectionner' : 'Tout selectionner' }}
+        </button>
+      </div>
+
+      <div class="topic-selection-list">
+        <label class="topic-selection-row" *ngFor="let topic of allWeakTopics(reminderTopicStudent)">
+          <input
+            type="checkbox"
+            [checked]="isReminderTopicSelected(topic)"
+            (change)="toggleReminderTopic(topic)"
+          />
+          <span>{{ topic }}</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="dialog-actions">
+      <button type="button" class="secondary-button" (click)="closeReminderTopicDialog()">Cancel</button>
+      <button
+        type="button"
+        class="primary-button"
+        [disabled]="selectedReminderTopics.length === 0"
+        (click)="confirmReminderTopicSelection()"
+      >
+        Envoyer
+      </button>
+    </div>
+  </div>
+</div>

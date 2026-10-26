@@ -1,0 +1,144 @@
+<div class="ai-chat" [class.ai-chat--compact]="compact">
+  <div class="ai-chat__intro" *ngIf="!compact">
+    <div class="ai-chat__title-row">
+      <button
+        *ngIf="isAvatarMode"
+        type="button"
+        class="ai-history-toggle"
+        [class.ai-history-toggle--active]="historyOpen"
+        (click)="toggleHistory()"
+        aria-label="Afficher ou masquer l'historique"
+      >
+        <span></span>
+      </button>
+
+      <div class="ai-chat__title-icon" *ngIf="!isAvatarMode">
+        <span>AI</span>
+      </div>
+
+      <div>
+        <h2>Assistant d'apprentissage IA</h2>
+        <p>Posez vos questions et obtenez de l'aide personnalisee 24/7</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="ai-chat__panel" [class.ai-chat__panel--avatar]="isAvatarMode">
+    <div
+      class="ai-avatar-shell"
+      *ngIf="isAvatarMode; else classicChat"
+      [class.ai-avatar-shell--history-open]="historyOpen"
+    >
+      <aside class="ai-history-panel" *ngIf="historyOpen">
+        <button type="button" class="ai-history-new" (click)="startNewAvatarChat()">
+          Nouveau chat
+        </button>
+
+        <div class="ai-history-panel__section">Recents</div>
+
+        <div class="ai-history-row" *ngFor="let session of chatHistory">
+          <button type="button" class="ai-history-item" (click)="openHistorySession(session)">
+            {{ session.title }}
+          </button>
+          <button
+            type="button"
+            class="ai-history-delete"
+            (click)="deleteHistorySession($event, session)"
+            aria-label="Supprimer cette conversation"
+          >
+            <span>delete</span>
+          </button>
+        </div>
+
+        <p class="ai-history-empty" *ngIf="chatHistory.length === 0">Aucun historique</p>
+      </aside>
+
+      <div class="ai-avatar-layout">
+        <div class="ai-avatar-layout__dialogue" #messagesViewport>
+          <ng-container *ngFor="let pair of conversationPairs">
+            <article class="ai-avatar-question">
+              <span>Votre question</span>
+              <p>{{ pair.question.text }}</p>
+            </article>
+
+            <article class="ai-avatar-answer" *ngIf="pair.answer as assistantMessage">
+              <span class="ai-avatar-answer__label">Reponse IA</span>
+              <p>{{ assistantMessage.text }}</p>
+              <small>{{ assistantMessage.time }}</small>
+            </article>
+          </ng-container>
+        </div>
+
+        <aside class="ai-avatar-stage" [class.ai-avatar-stage--speaking]="assistantSpeaking">
+          <div class="ai-robot" aria-hidden="true">
+            <div class="ai-robot__antenna"></div>
+            <div class="ai-robot__ear ai-robot__ear--left"></div>
+            <div class="ai-robot__ear ai-robot__ear--right"></div>
+            <div class="ai-robot__head">
+              <div class="ai-robot__screen">
+                <div class="ai-robot__eyes">
+                  <span></span>
+                  <span></span>
+                </div>
+                <div class="ai-robot__mouth"></div>
+              </div>
+            </div>
+            <div class="ai-robot__neck"></div>
+            <div class="ai-robot__body">
+              <div class="ai-robot__shine"></div>
+              <div class="ai-robot__panel"></div>
+            </div>
+            <div class="ai-robot__arm ai-robot__arm--left"></div>
+            <div class="ai-robot__arm ai-robot__arm--right"></div>
+            <div class="ai-robot__shadow"></div>
+          </div>
+
+          <div class="ai-avatar-waves">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <ng-template #classicChat>
+      <div class="ai-chat__messages" #messagesViewport>
+        <article
+          *ngFor="let message of messages"
+          class="ai-message"
+          [class.ai-message--student]="message.sender === 'student'"
+        >
+          <div class="ai-message__avatar">
+            <span *ngIf="message.sender === 'assistant'">AI</span>
+            <span *ngIf="message.sender === 'student'">Vous</span>
+          </div>
+
+          <div class="ai-message__bubble">
+            <p>{{ message.text }}</p>
+            <span>{{ message.time }}</span>
+          </div>
+        </article>
+      </div>
+    </ng-template>
+
+    <div class="ai-chat__quick">
+      <button type="button" *ngFor="let reply of quickReplies" (click)="useQuickReply(reply)">
+        {{ reply }}
+      </button>
+    </div>
+
+    <div class="ai-chat__composer">
+      <input
+        type="text"
+        [(ngModel)]="draftMessage"
+        (keydown.enter)="sendMessage()"
+        [disabled]="sending"
+        placeholder="Posez votre question..."
+      />
+      <button type="button" (click)="sendMessage()" [disabled]="sending">
+        {{ sending ? '...' : '>' }}
+      </button>
+    </div>
+  </div>
+</div>

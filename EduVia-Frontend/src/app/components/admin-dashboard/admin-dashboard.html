@@ -1,0 +1,117 @@
+<div class="min-h-screen bg-gray-50">
+  <!-- Header -->
+  <header class="bg-white border-b px-6 py-4">
+    <div class="max-w-7xl mx-auto flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <img src="assets/logo.png" alt="Eduvia" class="h-12" onerror="this.onerror=null; this.src='https://via.placeholder.com/48'" />
+        <div>
+          <h1 class="text-2xl">Eduvia - Panneau d'Administration</h1>
+          <p class="text-sm text-gray-600">{{ adminData.name }}</p>
+        </div>
+      </div>
+      <button mat-raised-button color="warn" (click)="onLogout()">
+        <mat-icon>logout</mat-icon>
+        Déconnexion
+      </button>
+    </div>
+  </header>
+
+  <div class="max-w-7xl mx-auto p-6">
+    <mat-tab-group>
+      <mat-tab label="Vue d'ensemble">
+        <div class="space-y-6">
+          <mat-card class="p-6 bg-gradient-to-r from-purple-50 to-indigo-50 border-purple-200">
+            <h2 class="text-xl mb-4">Tableau de bord principal</h2>
+            <p class="text-gray-700">
+              Bienvenue dans le panneau d'administration. Gérez les utilisateurs,
+              consultez les statistiques globales et supervisez la plateforme.
+            </p>
+          </mat-card>
+
+          <div class="grid md:grid-cols-4 gap-4">
+            <mat-card class="p-6">
+              <div class="flex items-center justify-between mb-2">
+                <mat-icon class="text-blue-600" style="font-size: 32px;">people</mat-icon>
+              </div>
+              <p class="text-3xl mb-1">{{ adminData.stats.totalUsers }}</p>
+              <p class="text-sm text-gray-600">Utilisateurs totaux</p>
+            </mat-card>
+
+            <mat-card class="p-6">
+              <div class="flex items-center justify-between mb-2">
+                <mat-icon class="text-green-600" style="font-size: 32px;">school</mat-icon>
+              </div>
+              <p class="text-3xl mb-1">{{ adminData.stats.students }}</p>
+              <p class="text-sm text-gray-600">Étudiants</p>
+            </mat-card>
+
+            <mat-card class="p-6">
+              <div class="flex items-center justify-between mb-2">
+                <mat-icon class="text-purple-600" style="font-size: 32px;">person</mat-icon>
+              </div>
+              <p class="text-3xl mb-1">{{ adminData.stats.teachers }}</p>
+              <p class="text-sm text-gray-600">Enseignants</p>
+            </mat-card>
+
+            <mat-card class="p-6">
+              <div class="flex items-center justify-between mb-2">
+                <mat-icon class="text-orange-600" style="font-size: 32px;">admin_panel_settings</mat-icon>
+              </div>
+              <p class="text-3xl mb-1">{{ adminData.stats.admins }}</p>
+              <p class="text-sm text-gray-600">Administrateurs</p>
+            </mat-card>
+          </div>
+
+          <div class="grid md:grid-cols-3 gap-4">
+            <mat-card class="p-6">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-3xl">👥</span>
+              </div>
+              <p class="text-3xl mb-1">{{ adminData.stats.activeToday }}</p>
+              <p class="text-sm text-gray-600">Actifs aujourd'hui</p>
+            </mat-card>
+
+            <mat-card class="p-6">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-3xl">📊</span>
+              </div>
+              <p class="text-3xl mb-1">{{ adminData.stats.avgEngagement }}%</p>
+              <p class="text-sm text-gray-600">Taux d'engagement moyen</p>
+            </mat-card>
+
+            <mat-card class="p-6">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-3xl">⭐</span>
+              </div>
+              <p class="text-3xl mb-1">{{ adminData.stats.avgSatisfaction }}/5</p>
+              <p class="text-sm text-gray-600">Satisfaction moyenne</p>
+            </mat-card>
+          </div>
+
+          <mat-card class="p-6">
+            <h3 class="mb-4">Activité récente</h3>
+            <div class="space-y-3">
+              <div *ngFor="let activity of recentActivities" class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div>
+                  <p class="text-sm">{{ activity.description }}</p>
+                  <p class="text-xs text-gray-500">{{ activity.time }}</p>
+                </div>
+                <span [ngClass]="activity.color === 'green' ? 'text-green-600' : activity.color === 'blue' ? 'text-blue-600' : 'text-purple-600'">
+                  {{ activity.change }}
+                </span>
+              </div>
+            </div>
+          </mat-card>
+        </div>
+      </mat-tab>
+
+      <mat-tab label="Utilisateurs">
+        <app-user-management></app-user-management>
+      </mat-tab>
+
+      <mat-tab label="Statistiques">
+        <app-platform-statistics></app-platform-statistics>
+      </mat-tab>
+    </mat-tab-group>
+  </div>
+</div>

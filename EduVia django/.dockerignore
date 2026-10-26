@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+db.sqlite3
+.venv/
+.git/
+ai_legacy/
+chatbot_train/vector_db/
+chatbot_train/data/
+uploads/legacy-backend-ci-fix/
+*.log

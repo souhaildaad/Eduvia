@@ -1,0 +1,278 @@
+<div class="login-shell">
+  <div class="login-frame">
+    <section class="brand-panel">
+      <a class="back-home" href="/" aria-label="Retour a l'accueil">
+        <mat-icon class="back-home__icon">arrow_back</mat-icon>
+      </a>
+
+      <div class="brand-stack">
+        <img src="/logo.png" alt="EduVia logo" class="brand-logo" />
+        <p class="brand-motto">Apprendre, collaborer et progresser dans un espace securise</p>
+      </div>
+
+      <div class="brand-panel__footer"></div>
+    </section>
+
+    <section class="form-panel">
+      <div class="form-card">
+        <p class="form-eyebrow">{{ eyebrow }}</p>
+        <h2>{{ title }}</h2>
+        <p class="form-copy">{{ copy }}</p>
+
+        <form (ngSubmit)="onSubmit()" class="login-form">
+          @if (mode !== 'reset-password') {
+            <div class="field-row">
+              <div class="field field--with-action">
+                <label for="email">Email</label>
+                <div class="field-input-with-icon">
+                  <input
+                    id="email"
+                    type="email"
+                    [(ngModel)]="email"
+                    name="email"
+                    required
+                    autocomplete="username"
+                    placeholder="nom@exemple.com" />
+                  <button
+                    type="button"
+                    class="field-help"
+                    (click)="announceField('email')"
+                    aria-label="Lire l'instruction saisir votre email">
+                    <mat-icon>{{ isVoiceFieldActive('email') ? 'volume_up' : 'volume_off' }}</mat-icon>
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
+
+          @if (mode === 'login') {
+            <div class="field field--with-action">
+              <label for="password">Mot de passe</label>
+              <div class="password-field">
+                <input
+                  id="password"
+                  [type]="showPassword ? 'text' : 'password'"
+                  [(ngModel)]="password"
+                  name="password"
+                  required
+                  autocomplete="current-password"
+                  placeholder="Saisir votre mot de passe" />
+                <button
+                  type="button"
+                  class="field-help"
+                  (click)="announceField('password')"
+                  aria-label="Lire l'instruction saisir votre mot de passe">
+                  <mat-icon>{{ isVoiceFieldActive('password') ? 'volume_up' : 'volume_off' }}</mat-icon>
+                </button>
+                <button
+                  type="button"
+                  class="password-toggle"
+                  (click)="togglePasswordVisibility('password')"
+                  [attr.aria-label]="showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'">
+                  <span class="eye-icon" [class.eye-icon--off]="showPassword">
+                    <span class="eye-icon__shape"></span>
+                    <span class="eye-icon__pupil"></span>
+                    <span class="eye-icon__slash"></span>
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            @if (isForgotPasswordAvailable) {
+              <button type="button" class="forgot-link" (click)="onForgotPasswordClick()">
+                Mot de passe oublie ?
+              </button>
+            }
+
+            @if (role === 'teacher' || role === 'student') {
+              <button type="button" class="face-login-button" (click)="openFaceLogin()">
+                <mat-icon>face</mat-icon>
+                Se connecter avec Face ID
+              </button>
+            }
+          }
+
+          <div class="face-login-panel" *ngIf="faceLoginOpen">
+            <div class="face-login-head">
+              <strong>Connexion Face ID</strong>
+              <button type="button" class="captcha-refresh" (click)="closeFaceLogin()" aria-label="Fermer Face ID">×</button>
+            </div>
+            <video #faceLoginVideo class="face-login-video" playsinline muted></video>
+            <p class="field-hint">Placez votre visage complet, clair et face a la camera.</p>
+            <div *ngIf="faceLoginMessage" class="captcha-error">{{ faceLoginMessage }}</div>
+            <button type="button" class="face-capture-button" (click)="submitFaceLogin()" [disabled]="faceLoginLoading">
+              {{ faceLoginLoading ? 'Verification...' : 'Verifier mon visage' }}
+            </button>
+          </div>
+
+          @if (mode === 'reset-password') {
+            <div class="field field--with-action">
+              <label for="newPassword">Nouveau mot de passe</label>
+              <div class="password-field">
+                <input
+                  id="newPassword"
+                  [type]="showNewPassword ? 'text' : 'password'"
+                  [(ngModel)]="newPassword"
+                  name="newPassword"
+                  required
+                  autocomplete="new-password"
+                  (ngModelChange)="onNewPasswordInput()"
+                  placeholder="Saisir un nouveau mot de passe" />
+                <button
+                  type="button"
+                  class="field-help"
+                  (click)="announceField('newPassword')"
+                  aria-label="Lire l'instruction saisir le nouveau mot de passe">
+                  <mat-icon>{{ isVoiceFieldActive('newPassword') ? 'volume_up' : 'volume_off' }}</mat-icon>
+                </button>
+                <button
+                  type="button"
+                  class="password-toggle"
+                  (click)="togglePasswordVisibility('newPassword')"
+                  [attr.aria-label]="showNewPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'">
+                  <span class="eye-icon" [class.eye-icon--off]="showNewPassword">
+                    <span class="eye-icon__shape"></span>
+                    <span class="eye-icon__pupil"></span>
+                    <span class="eye-icon__slash"></span>
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div class="password-rules-card">
+              <div class="password-rules-title">Le mot de passe doit contenir :</div>
+              <div
+                *ngFor="let requirement of passwordRequirements"
+                class="password-rule"
+                [class.password-rule--valid]="newPasswordRequirementState[requirement.key]"
+                [class.password-rule--invalid]="!newPasswordRequirementState[requirement.key]">
+                <span class="password-rule-icon">{{ newPasswordRequirementState[requirement.key] ? '✓' : '✕' }}</span>
+                <span>{{ requirement.label }}</span>
+              </div>
+            </div>
+
+            <div class="field field--with-action">
+              <label for="confirmPassword">Confirmer le mot de passe</label>
+              <div class="password-field">
+                <input
+                  id="confirmPassword"
+                  [type]="showConfirmPassword ? 'text' : 'password'"
+                  [(ngModel)]="confirmPassword"
+                  name="confirmPassword"
+                  required
+                  autocomplete="new-password"
+                  [disabled]="!allNewPasswordRequirementsMet"
+                  placeholder="Confirmer le nouveau mot de passe" />
+                <button
+                  type="button"
+                  class="field-help"
+                  (click)="announceField('confirmPassword')"
+                  aria-label="Lire l'instruction confirmer le mot de passe">
+                  <mat-icon>{{ isVoiceFieldActive('confirmPassword') ? 'volume_up' : 'volume_off' }}</mat-icon>
+                </button>
+                <button
+                  type="button"
+                  class="password-toggle"
+                  (click)="togglePasswordVisibility('confirmPassword')"
+                  [attr.aria-label]="showConfirmPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'">
+                  <span class="eye-icon" [class.eye-icon--off]="showConfirmPassword">
+                    <span class="eye-icon__shape"></span>
+                    <span class="eye-icon__pupil"></span>
+                    <span class="eye-icon__slash"></span>
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div *ngIf="!allNewPasswordRequirementsMet" class="field-hint">
+              Le champ confirmer le mot de passe devient actif quand toutes les conditions sont valides.
+            </div>
+          }
+
+          <div class="captcha-card">
+            <div class="captcha-head">
+              <div>
+                <strong>Verification anti-bot</strong>
+                <small>
+                  {{ captchaMode === 'math' ? "Resoudre l'operation pour continuer" : 'Selectionnez les bonnes cases pour continuer' }}
+                </small>
+              </div>
+              <div class="captcha-head__actions">
+                <button
+                  type="button"
+                  class="field-help field-help--captcha"
+                  (click)="announceField('captcha')"
+                  aria-label="Lire l'instruction pour verifier que vous n'etes pas un robot">
+                  <mat-icon>{{ isVoiceFieldActive('captcha') ? 'volume_up' : 'volume_off' }}</mat-icon>
+                </button>
+                <button type="button" class="captcha-refresh" (click)="refreshCaptcha()" aria-label="Nouveau captcha">
+                  &#8635;
+                </button>
+              </div>
+            </div>
+
+            <div *ngIf="captchaMode === 'math'" class="captcha-challenge">
+              <span>{{ captchaPrompt }}</span>
+            </div>
+
+            <div *ngIf="captchaMode === 'math'" class="captcha-actions">
+              <input
+                type="text"
+                [(ngModel)]="captchaAnswer"
+                name="captchaAnswer"
+                inputmode="numeric"
+                placeholder="Entrer le resultat" />
+            </div>
+
+            <div *ngIf="captchaMode === 'puzzle'" class="captcha-puzzle">
+              <div class="captcha-puzzle__instruction">
+                {{ puzzleInstruction }}
+              </div>
+
+              <div class="captcha-puzzle__grid">
+                <button
+                  *ngFor="let cell of puzzleCells"
+                  type="button"
+                  class="captcha-puzzle__cell"
+                  [class.captcha-puzzle__cell--selected]="cell.selected"
+                  (click)="togglePuzzleCell(cell.id)">
+                  <span>{{ cell.label }}</span>
+                </button>
+              </div>
+            </div>
+
+            <div *ngIf="captchaError" class="captcha-error">
+              {{ captchaError }}
+            </div>
+          </div>
+
+          <div class="sr-only" aria-live="polite" aria-atomic="true">
+            {{ screenReaderMessage }}
+          </div>
+
+          <div *ngIf="errorMessage && mode === 'login'" class="error-message">
+            {{ errorMessage }}
+          </div>
+
+          <div *ngIf="localErrorMessage" class="error-message">
+            {{ localErrorMessage }}
+          </div>
+
+          <div *ngIf="successMessage" class="success-message">
+            {{ successMessage }}
+          </div>
+
+          <button class="submit-btn" type="submit" [disabled]="!canSubmit">
+            {{ isLoading ? 'Chargement...' : submitLabel }}
+          </button>
+
+          @if (mode !== 'login') {
+            <button type="button" class="back-link" (click)="onBackClick()">
+              Retour a la connexion
+            </button>
+          }
+        </form>
+      </div>
+    </section>
+  </div>
+</div>

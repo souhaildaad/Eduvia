@@ -1,0 +1,221 @@
+<section class="internship-admin">
+  <article class="internship-hero">
+    <div class="internship-hero__copy">
+      <div class="hero-icon">
+        <mat-icon>work</mat-icon>
+      </div>
+      <div>
+        <h2>Administration des Stages</h2>
+        <p>Gerez les offres de stage pour les etudiants.</p>
+      </div>
+    </div>
+  </article>
+
+  <nav class="internship-subnav" aria-label="Gestion des stages">
+    <button
+      type="button"
+      [class.active]="selectedSection === 'new'"
+      (click)="selectSection('new')"
+    >
+      <mat-icon>add_circle</mat-icon>
+      Nouveau stage
+    </button>
+    <button
+      type="button"
+      [class.active]="selectedSection === 'list'"
+      (click)="selectSection('list')"
+    >
+      <mat-icon>table_rows</mat-icon>
+      Liste des stages
+    </button>
+  </nav>
+
+  <p class="form-error" *ngIf="error">{{ error }}</p>
+  <div class="success-popup" *ngIf="showSuccess" role="status" aria-live="polite">
+    <mat-icon>check_circle</mat-icon>
+    <span>{{ successMessage }}</span>
+  </div>
+  <div class="save-error-popup" *ngIf="showSaveError" role="alert" aria-live="assertive">
+    <mat-icon>error</mat-icon>
+    <span>{{ saveErrorMessage }}</span>
+  </div>
+
+  <form class="internship-form" *ngIf="selectedSection === 'new'" #stageForm="ngForm" (ngSubmit)="save(stageForm)">
+    <h3>Nouveau Stage</h3>
+
+    <ng-container *ngTemplateOutlet="stageFields"></ng-container>
+
+    <div class="form-actions">
+      <button type="submit" class="primary-action" [disabled]="saving || stageForm.invalid">
+        <mat-icon>save</mat-icon>
+        {{ saving ? 'Enregistrement...' : 'Enregistrer' }}
+      </button>
+      <button type="button" class="secondary-action" (click)="cancel()">Annuler</button>
+    </div>
+  </form>
+
+  <ng-template #stageFields>
+    <label class="form-field">
+      <span>Titre du stage *</span>
+      <input name="title" [(ngModel)]="form.title" required minlength="5" maxlength="90" #title="ngModel" placeholder="Ex: Developpeur Web Full-Stack" />
+      <small *ngIf="title.invalid && title.touched">Minimum 5 caracteres.</small>
+    </label>
+    <label class="form-field">
+      <span>Entreprise *</span>
+      <input name="company" [(ngModel)]="form.company" required minlength="2" maxlength="70" #company="ngModel" placeholder="Ex: TechCorp Solutions" />
+      <small *ngIf="company.invalid && company.touched">Entreprise obligatoire.</small>
+    </label>
+    <label class="form-field">
+      <span>Ville *</span>
+      <input name="city" [(ngModel)]="form.city" required minlength="2" maxlength="50" #city="ngModel" placeholder="Ex: Paris" />
+      <small *ngIf="city.invalid && city.touched">Ville obligatoire.</small>
+    </label>
+    <label class="form-field">
+      <span>Duree *</span>
+      <input name="duration" [(ngModel)]="form.duration" required [pattern]="'^[0-9]+\\s*(mois|semaines|jours)$'" #duration="ngModel" placeholder="Ex: 3 mois" />
+      <small *ngIf="duration.invalid && duration.touched">Exemple attendu : 3 mois.</small>
+    </label>
+    <label class="form-field">
+      <span>Domaine *</span>
+      <input name="domain" [(ngModel)]="form.domain" required minlength="2" maxlength="60" #domain="ngModel" placeholder="Ex: Developpement Web" />
+      <small *ngIf="domain.invalid && domain.touched">Domaine obligatoire.</small>
+    </label>
+    <label class="form-field">
+      <span>Email *</span>
+      <input name="email" [(ngModel)]="form.email" required type="email" maxlength="90" #email="ngModel" placeholder="contact@entreprise.fr" />
+      <small *ngIf="email.invalid && email.touched">Email invalide.</small>
+    </label>
+    <label class="form-field">
+      <span>Telephone *</span>
+      <input name="phone" [(ngModel)]="form.phone" required pattern="^[+0-9 ()-]{8,20}$" #phone="ngModel" placeholder="+33 1 23 45 67 89" />
+      <small *ngIf="phone.invalid && phone.touched">Numero de telephone invalide.</small>
+    </label>
+    <label class="form-field">
+      <span>Site web</span>
+      <input name="website" [(ngModel)]="form.website" pattern="https?://.+" maxlength="120" #website="ngModel" placeholder="https://www.entreprise.fr" />
+      <small *ngIf="website.invalid && website.touched">Le lien doit commencer par http:// ou https://.</small>
+    </label>
+    <label class="form-field">
+      <span>Date limite *</span>
+      <input name="deadline" [(ngModel)]="form.deadline" required type="date" [min]="minDeadline" #deadline="ngModel" />
+      <small *ngIf="deadline.invalid && deadline.touched">Choisissez une date a partir d'aujourd'hui.</small>
+    </label>
+    <label class="form-field wide">
+      <span>Adresse *</span>
+      <input name="address" [(ngModel)]="form.address" required minlength="5" maxlength="140" #address="ngModel" placeholder="15 Rue de la Republique, 69002 Lyon" />
+      <small *ngIf="address.invalid && address.touched">Adresse obligatoire.</small>
+    </label>
+    <label class="form-field wide">
+      <span>Description *</span>
+      <textarea name="description" [(ngModel)]="form.description" required minlength="20" maxlength="800" rows="4" #description="ngModel"></textarea>
+      <small *ngIf="description.invalid && description.touched">Minimum 20 caracteres.</small>
+    </label>
+    <label class="form-field wide">
+      <span>Competences demandees *</span>
+      <textarea name="skillsText" [(ngModel)]="form.skillsText" required minlength="5" maxlength="500" rows="4" #skillsText="ngModel" placeholder="Une competence par ligne"></textarea>
+      <small *ngIf="skillsText.invalid && skillsText.touched">Ajoutez au moins une competence.</small>
+    </label>
+  </ng-template>
+
+  <article class="internship-table" *ngIf="selectedSection === 'list'">
+    <p *ngIf="loading">Chargement des stages...</p>
+    <table *ngIf="!loading">
+      <thead>
+        <tr>
+          <th>Titre</th>
+          <th>Entreprise</th>
+          <th>Localisation</th>
+          <th>Niveau</th>
+          <th>Date limite</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let internship of paginatedInternships">
+          <td>{{ internship.title }}</td>
+          <td>{{ internship.company }}</td>
+          <td>{{ internship.city }}</td>
+          <td><span class="level-chip">{{ internship.level }}</span></td>
+          <td>{{ internship.deadline }}</td>
+          <td>
+            <button type="button" class="edit-button" (click)="editInternship(internship)" aria-label="Modifier">
+              <mat-icon>edit</mat-icon>
+            </button>
+            <button type="button" class="delete-button" (click)="askDeleteInternship(internship)" aria-label="Supprimer">
+              <mat-icon>delete</mat-icon>
+            </button>
+          </td>
+        </tr>
+        <tr *ngIf="internships.length === 0">
+          <td colspan="6" class="empty-table">Aucun stage disponible.</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="pagination-bar" *ngIf="!loading && internships.length > pageSize">
+      <p>
+        {{ paginationStart }}-{{ paginationEnd }} sur {{ internships.length }} stages
+      </p>
+      <div class="pagination-controls" aria-label="Pagination des stages">
+        <button type="button" (click)="previousPage()" [disabled]="currentPage === 1" aria-label="Page precedente">
+          <mat-icon>chevron_left</mat-icon>
+        </button>
+        <button
+          type="button"
+          *ngFor="let page of pageNumbers"
+          [class.active]="page === currentPage"
+          (click)="goToPage(page)"
+          [attr.aria-label]="'Page ' + page"
+          [attr.aria-current]="page === currentPage ? 'page' : null"
+        >
+          {{ page }}
+        </button>
+        <button type="button" (click)="nextPage()" [disabled]="currentPage === totalPages" aria-label="Page suivante">
+          <mat-icon>chevron_right</mat-icon>
+        </button>
+      </div>
+    </div>
+  </article>
+
+  <div class="modal-backdrop" *ngIf="editingInternship">
+    <form class="internship-form internship-form--dialog" #editStageForm="ngForm" (ngSubmit)="save(editStageForm)">
+      <div class="dialog-header">
+        <h3>Modifier le stage</h3>
+        <button type="button" class="icon-button" (click)="closeEdit()" aria-label="Fermer">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+      <ng-container *ngTemplateOutlet="stageFields"></ng-container>
+
+      <div class="form-actions">
+        <button type="submit" class="primary-action" [disabled]="saving || editStageForm.invalid">
+          <mat-icon>save</mat-icon>
+          {{ saving ? 'Enregistrement...' : 'Enregistrer' }}
+        </button>
+        <button type="button" class="secondary-action" (click)="closeEdit()">Annuler</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="modal-backdrop" *ngIf="internshipToDelete">
+    <article class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+      <div class="confirm-dialog__icon">
+        <mat-icon>delete</mat-icon>
+      </div>
+      <h3 id="delete-title">Confirmer la suppression</h3>
+      <p>
+        Voulez-vous supprimer le stage
+        <strong>{{ internshipToDelete.title }}</strong>
+        ?
+      </p>
+
+      <div class="form-actions">
+        <button type="button" class="danger-action" (click)="confirmDeleteInternship()">
+          <mat-icon>delete</mat-icon>
+          Supprimer
+        </button>
+        <button type="button" class="secondary-action" (click)="closeDeleteConfirm()">Annuler</button>
+      </div>
+    </article>
+  </div>
+</section>

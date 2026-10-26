@@ -1,0 +1,508 @@
+<div class="profile-shell">
+  <div class="profile-header">
+    <h1>Parametres du Profil</h1>
+    <p>Gerez vos informations personnelles et parametres de securite</p>
+  </div>
+
+  <section class="steps-card">
+    <h2>Steps</h2>
+    <div class="steps-track" aria-label="Progression du profil">
+      <ng-container *ngFor="let step of steps; let i = index">
+        <button
+          type="button"
+          class="step-item"
+          [class.active]="isStepActive(i)"
+          [class.completed]="isStepCompleted(i)"
+          (click)="selectedTab = i">
+          <span class="step-circle">{{ i + 1 }}</span>
+          <span class="step-label">{{ step }}</span>
+        </button>
+        <span class="step-line" *ngIf="i < steps.length - 1" [class.completed]="selectedTab > i"></span>
+      </ng-container>
+    </div>
+  </section>
+
+  <div class="profile-step-panels">
+    <ng-container *ngIf="selectedTab === 0">
+      <section class="profile-card">
+        <h2>Mise a jour du profil</h2>
+        <p class="subtitle">Mettez a jour vos informations personnelles</p>
+
+        <div class="avatar-row">
+          <div class="avatar-wrap">
+            <div class="avatar-circle" *ngIf="!photoPreviewUrl">{{ initials }}</div>
+            <img *ngIf="photoPreviewUrl" [src]="photoPreviewUrl" alt="Photo profil" class="avatar-image" />
+            <button
+              *ngIf="photoPreviewUrl"
+              type="button"
+              class="avatar-remove-btn"
+              (click)="removePhoto()"
+              aria-label="Supprimer la photo">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+
+          <div class="voice-inline-actions">
+            <label class="upload-btn" for="profile-photo-input">
+              <mat-icon>upload</mat-icon>
+              <span>Changer la photo</span>
+            </label>
+            <button
+              type="button"
+              class="voice-help"
+              (click)="announceProfileHelp('photoUpload')"
+              aria-label="Lire l'aide pour changer la photo">
+              <mat-icon>{{ isProfileVoiceActive('photoUpload') ? 'volume_up' : 'volume_off' }}</mat-icon>
+            </button>
+          </div>
+          <input
+            id="profile-photo-input"
+            class="hidden-input"
+            type="file"
+            accept="image/png,image/jpeg,image/gif"
+            (change)="onPhotoSelected($event)" />
+
+          <span class="file-info">JPG, PNG ou GIF. Max 2MB.</span>
+        </div>
+
+        <form *ngIf="profileForm" [formGroup]="profileForm" (ngSubmit)="onSubmit()" class="profile-form">
+          <div class="form-grid">
+            <div class="accessible-field">
+              <mat-form-field appearance="outline">
+                <mat-label>Nom complet*</mat-label>
+                <input matInput formControlName="fullName" />
+                <mat-icon matPrefix>person</mat-icon>
+                <button matSuffix type="button" class="voice-help voice-help--inside" (click)="toggleProfileDictation('fullName')" aria-label="Activer ou desactiver la dictee vocale du champ nom complet">
+                  <mat-icon>{{ isProfileDictationActive('fullName') ? 'mic' : 'mic_off' }}</mat-icon>
+                </button>
+                <button matSuffix type="button" class="voice-help voice-help--inside" (click)="announceProfileHelp('fullName')" aria-label="Lire l'aide du champ nom complet">
+                  <mat-icon>{{ isProfileVoiceActive('fullName') ? 'volume_up' : 'volume_off' }}</mat-icon>
+                </button>
+              </mat-form-field>
+            </div>
+
+            <div class="accessible-field">
+              <mat-form-field appearance="outline">
+                <mat-label>Email*</mat-label>
+                <input matInput formControlName="email" readonly />
+                <mat-icon matPrefix>email</mat-icon>
+                <button matSuffix type="button" class="voice-help voice-help--inside" (click)="announceProfileHelp('email')" aria-label="Lire l'aide du champ email">
+                  <mat-icon>{{ isProfileVoiceActive('email') ? 'volume_up' : 'volume_off' }}</mat-icon>
+                </button>
+              </mat-form-field>
+            </div>
+
+            <div class="accessible-field">
+              <mat-form-field appearance="outline">
+                <mat-label>Telephone* (+216XXXXXXXX)</mat-label>
+                <input matInput formControlName="phone" (input)="onPhoneInput($event)" />
+                <mat-icon matPrefix>phone</mat-icon>
+                <button matSuffix type="button" class="voice-help voice-help--inside" (click)="toggleProfileDictation('phone')" aria-label="Activer ou desactiver la dictee vocale du champ telephone">
+                  <mat-icon>{{ isProfileDictationActive('phone') ? 'mic' : 'mic_off' }}</mat-icon>
+                </button>
+                <button matSuffix type="button" class="voice-help voice-help--inside" (click)="announceProfileHelp('phone')" aria-label="Lire l'aide du champ telephone">
+                  <mat-icon>{{ isProfileVoiceActive('phone') ? 'volume_up' : 'volume_off' }}</mat-icon>
+                </button>
+                <mat-error *ngIf="profileForm.get('phone')?.invalid">
+                  Format obligatoire: +216 suivi de 8 chiffres
+                </mat-error>
+              </mat-form-field>
+            </div>
+
+            <div class="accessible-field">
+              <mat-form-field appearance="outline">
+                <mat-label>Date de naissance*</mat-label>
+                <input
+                  matInput
+                  formControlName="birthdate"
+                  placeholder="JJ/MM/AAAA"
+                  inputmode="numeric"
+                  [readonly]="birthdateInputMode === 'calendar'"
+                  (input)="onBirthdateInput($event)"
+                  (blur)="onBirthdateBlur()"
+                />
+                <mat-icon matPrefix>calendar_today</mat-icon>
+                <button
+                  *ngIf="profileForm.get('birthdate')?.value"
+                  matSuffix
+                  type="button"
+                  class="voice-help voice-help--inside"
+                  (click)="clearBirthdate()"
+                  aria-label="Vider la date de naissance">
+                  <mat-icon>close</mat-icon>
+                </button>
+                <button matSuffix type="button" class="voice-help voice-help--inside" (click)="announceProfileHelp('birthdate')" aria-label="Lire l'aide du champ date de naissance">
+                  <mat-icon>{{ isProfileVoiceActive('birthdate') ? 'volume_up' : 'volume_off' }}</mat-icon>
+                </button>
+                <mat-datepicker-toggle
+                  matSuffix
+                  [for]="birthPicker"
+                  [disabled]="birthdateInputMode === 'manual' && !!profileForm.get('birthdate')?.value">
+                </mat-datepicker-toggle>
+                <input
+                  class="hidden-datepicker-input"
+                  [matDatepicker]="birthPicker"
+                  tabindex="-1"
+                  aria-hidden="true"
+                  (dateChange)="onBirthdateSelected($event.value)" />
+                <mat-datepicker #birthPicker></mat-datepicker>
+                <mat-hint>
+                  Saisissez uniquement des chiffres au format JJ/MM/AAAA ou utilisez le calendrier.
+                </mat-hint>
+                <mat-error *ngIf="profileForm.get('birthdate')?.touched && profileForm.get('birthdate')?.hasError('required')">
+                  La date de naissance est obligatoire.
+                </mat-error>
+                <mat-error *ngIf="profileForm.get('birthdate')?.touched && profileForm.get('birthdate')?.hasError('invalidBirthdate')">
+                  Format invalide. Utilisez par exemple `26/05/2001` ou choisissez une date.
+                </mat-error>
+              </mat-form-field>
+            </div>
+
+            <div class="accessible-field">
+              <mat-form-field appearance="outline">
+                <mat-label>Specialite*</mat-label>
+                <input matInput formControlName="specialization" />
+                <mat-icon matPrefix>school</mat-icon>
+                <button matSuffix type="button" class="voice-help voice-help--inside" (click)="toggleProfileDictation('specialization')" aria-label="Activer ou desactiver la dictee vocale du champ specialite">
+                  <mat-icon>{{ isProfileDictationActive('specialization') ? 'mic' : 'mic_off' }}</mat-icon>
+                </button>
+                <button matSuffix type="button" class="voice-help voice-help--inside" (click)="announceProfileHelp('specialization')" aria-label="Lire l'aide du champ specialite">
+                  <mat-icon>{{ isProfileVoiceActive('specialization') ? 'volume_up' : 'volume_off' }}</mat-icon>
+                </button>
+              </mat-form-field>
+            </div>
+
+            <div class="accessible-field">
+              <mat-form-field appearance="outline">
+                <mat-label>Adresse*</mat-label>
+                <input matInput formControlName="address" />
+                <mat-icon matPrefix>location_on</mat-icon>
+                <button matSuffix type="button" class="voice-help voice-help--inside" (click)="toggleProfileDictation('address')" aria-label="Activer ou desactiver la dictee vocale du champ adresse">
+                  <mat-icon>{{ isProfileDictationActive('address') ? 'mic' : 'mic_off' }}</mat-icon>
+                </button>
+                <button matSuffix type="button" class="voice-help voice-help--inside" (click)="announceProfileHelp('address')" aria-label="Lire l'aide du champ adresse">
+                  <mat-icon>{{ isProfileVoiceActive('address') ? 'volume_up' : 'volume_off' }}</mat-icon>
+                </button>
+              </mat-form-field>
+            </div>
+          </div>
+
+          <div class="accessible-field accessible-field--full">
+            <mat-form-field appearance="outline" class="full-width">
+              <mat-label>Biographie</mat-label>
+              <textarea matInput rows="4" formControlName="bio" placeholder="Parlez-nous de vous..."></textarea>
+              <button matSuffix type="button" class="voice-help voice-help--inside voice-help--textarea" (click)="toggleProfileDictation('bio')" aria-label="Activer ou desactiver la dictee vocale du champ biographie">
+                <mat-icon>{{ isProfileDictationActive('bio') ? 'mic' : 'mic_off' }}</mat-icon>
+              </button>
+              <button matSuffix type="button" class="voice-help voice-help--inside voice-help--textarea" (click)="announceProfileHelp('bio')" aria-label="Lire l'aide du champ biographie">
+                <mat-icon>{{ isProfileVoiceActive('bio') ? 'volume_up' : 'volume_off' }}</mat-icon>
+              </button>
+              <mat-hint align="end">{{ profileForm.get('bio')?.value?.length || 0 }}/500</mat-hint>
+            </mat-form-field>
+          </div>
+
+          <div class="actions">
+            <div class="voice-inline-actions">
+              <button mat-raised-button type="submit" class="save-btn" [disabled]="saveDisabled">
+                <mat-icon>save</mat-icon>
+                <span>{{ isLoading ? 'Enregistrement...' : 'Sauvegarder' }}</span>
+              </button>
+              <button type="button" class="voice-help" (click)="announceProfileHelp('saveProfile')" aria-label="Lire l'aide du bouton sauvegarder">
+                <mat-icon>{{ isProfileVoiceActive('saveProfile') ? 'volume_up' : 'volume_off' }}</mat-icon>
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>
+    </ng-container>
+
+    <ng-container *ngIf="selectedTab === 1">
+      <section class="profile-card">
+        <h2>Securite du compte</h2>
+        <p class="subtitle">Mettez a jour votre mot de passe avec verification de securite.</p>
+
+        <form *ngIf="securityForm" class="security-form" [formGroup]="securityForm" (ngSubmit)="submitSecurityForm()">
+          <div class="security-field">
+            <label for="currentPassword">Ancien mot de passe*</label>
+            <div class="security-input-row">
+              <div class="security-input-with-action">
+                <input
+                  id="currentPassword"
+                  [type]="showCurrentPassword ? 'text' : 'password'"
+                  formControlName="currentPassword"
+                  autocomplete="current-password"
+                  placeholder="Saisissez votre ancien mot de passe"
+                  (input)="onCurrentPasswordInput()"
+                  (blur)="onCurrentPasswordBlur()" />
+                <button
+                  type="button"
+                  class="password-toggle security-password-toggle"
+                  (click)="toggleSecurityPasswordVisibility('currentPassword')"
+                  [attr.aria-label]="showCurrentPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'">
+                  <span class="eye-icon" [class.eye-icon--off]="showCurrentPassword">
+                    <span class="eye-icon__shape"></span>
+                    <span class="eye-icon__pupil"></span>
+                    <span class="eye-icon__slash"></span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="voice-help voice-help--inside-field"
+                  (click)="announceProfileHelp('currentPassword')"
+                  aria-label="Lire l'aide du champ ancien mot de passe">
+                  <mat-icon>{{ isProfileVoiceActive('currentPassword') ? 'volume_up' : 'volume_off' }}</mat-icon>
+                </button>
+              </div>
+              <button
+                type="button"
+                class="verify-password-button"
+                [disabled]="validatingCurrentPassword"
+                (click)="onValidateCurrentPasswordClick()">
+                {{ validatingCurrentPassword ? 'Verification...' : 'Verifier' }}
+              </button>
+              <button
+                type="button"
+                class="voice-help"
+                (click)="announceProfileHelp('validateCurrentPassword')"
+                aria-label="Lire l'aide du bouton verifier">
+                <mat-icon>{{ isProfileVoiceActive('validateCurrentPassword') ? 'volume_up' : 'volume_off' }}</mat-icon>
+              </button>
+            </div>
+            <div *ngIf="securityForm.get('currentPassword')?.touched && securityForm.get('currentPassword')?.hasError('required')" class="security-error">
+              L ancien mot de passe est obligatoire.
+            </div>
+            <div *ngIf="currentPasswordStatusMessage" class="security-status" [class.security-status--error]="currentPasswordStatusType === 'error'" [class.security-status--success]="currentPasswordStatusType === 'success'">
+              {{ currentPasswordStatusMessage }}
+            </div>
+          </div>
+
+          <div class="security-field">
+            <label for="newPassword">Nouveau mot de passe*</label>
+            <div class="security-single-input-row">
+              <div class="security-input-with-action">
+                <input
+                  id="newPassword"
+                  [type]="showNewPassword ? 'text' : 'password'"
+                  formControlName="newPassword"
+                  autocomplete="new-password"
+                  placeholder="Saisissez votre nouveau mot de passe" />
+                <button
+                  type="button"
+                  class="password-toggle security-password-toggle"
+                  (click)="toggleSecurityPasswordVisibility('newPassword')"
+                  [attr.aria-label]="showNewPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'">
+                  <span class="eye-icon" [class.eye-icon--off]="showNewPassword">
+                    <span class="eye-icon__shape"></span>
+                    <span class="eye-icon__pupil"></span>
+                    <span class="eye-icon__slash"></span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="voice-help voice-help--inside-field"
+                  (click)="announceProfileHelp('newPassword')"
+                  aria-label="Lire l'aide du champ nouveau mot de passe">
+                  <mat-icon>{{ isProfileVoiceActive('newPassword') ? 'volume_up' : 'volume_off' }}</mat-icon>
+                </button>
+              </div>
+            </div>
+            <div *ngIf="!currentPasswordValidated" class="security-hint">
+              Ce champ devient actif seulement apres verification de l ancien mot de passe modifie par vous.
+            </div>
+            <div *ngIf="currentPasswordValidated" class="password-rules-card">
+              <div class="password-rules-title">Le mot de passe doit contenir :</div>
+              <div
+                *ngFor="let requirement of passwordRequirements"
+                class="password-rule"
+                [class.password-rule--valid]="newPasswordRequirementState[requirement.key]"
+                [class.password-rule--invalid]="!newPasswordRequirementState[requirement.key]">
+                <span class="password-rule-icon">{{ newPasswordRequirementState[requirement.key] ? '✓' : '✕' }}</span>
+                <span>{{ requirement.label }}</span>
+              </div>
+            </div>
+            <div *ngIf="securityForm.get('newPassword')?.touched && securityForm.get('newPassword')?.hasError('required')" class="security-error">
+              Le nouveau mot de passe est obligatoire.
+            </div>
+            <div *ngIf="currentPasswordValidated && !allNewPasswordRequirementsMet" class="security-hint">
+              Le champ confirmer le mot de passe devient actif quand toutes les conditions sont valides.
+            </div>
+          </div>
+
+          <div class="security-field">
+            <label for="confirmPassword">Confirmer le mot de passe*</label>
+            <div class="security-single-input-row">
+              <div class="security-input-with-action">
+                <input
+                  id="confirmPassword"
+                  [type]="showConfirmPassword ? 'text' : 'password'"
+                  formControlName="confirmPassword"
+                  autocomplete="new-password"
+                  placeholder="Confirmez votre nouveau mot de passe" />
+                <button
+                  type="button"
+                  class="password-toggle security-password-toggle"
+                  (click)="toggleSecurityPasswordVisibility('confirmPassword')"
+                  [attr.aria-label]="showConfirmPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'">
+                  <span class="eye-icon" [class.eye-icon--off]="showConfirmPassword">
+                    <span class="eye-icon__shape"></span>
+                    <span class="eye-icon__pupil"></span>
+                    <span class="eye-icon__slash"></span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  class="voice-help voice-help--inside-field"
+                  (click)="announceProfileHelp('confirmPassword')"
+                  aria-label="Lire l'aide du champ confirmation du mot de passe">
+                  <mat-icon>{{ isProfileVoiceActive('confirmPassword') ? 'volume_up' : 'volume_off' }}</mat-icon>
+                </button>
+              </div>
+            </div>
+            <div *ngIf="securityForm.get('confirmPassword')?.touched && securityForm.get('confirmPassword')?.hasError('required')" class="security-error">
+              La confirmation du mot de passe est obligatoire.
+            </div>
+            <div *ngIf="showSecurityPasswordMismatchError" class="security-error">
+              La confirmation doit etre identique au nouveau mot de passe.
+            </div>
+          </div>
+
+          <div class="security-captcha-panel">
+            <div class="security-captcha-header">
+              <span>Verification anti-robot</span>
+              <div class="voice-inline-actions">
+                <button
+                  type="button"
+                  class="voice-help"
+                  (click)="announceProfileHelp('captcha')"
+                  aria-label="Lire l'aide de la verification anti robot">
+                  <mat-icon>{{ isProfileVoiceActive('captcha') ? 'volume_up' : 'volume_off' }}</mat-icon>
+                </button>
+                <button type="button" class="security-refresh-button" (click)="generateSecurityCaptcha()" aria-label="Rafraichir captcha">
+                  <mat-icon>refresh</mat-icon>
+                </button>
+              </div>
+            </div>
+
+            <div class="security-captcha-challenge">{{ securityCaptchaPrompt }}</div>
+
+            <mat-checkbox formControlName="isNotRobot">
+              Je confirme que je ne suis pas un robot
+            </mat-checkbox>
+
+            <input
+              class="security-captcha-input"
+              type="text"
+              formControlName="captchaAnswer"
+              placeholder="Entrez le resultat" />
+
+            <div *ngIf="securityForm.get('isNotRobot')?.touched && securityForm.get('isNotRobot')?.hasError('required')" class="security-error">
+              La verification anti-robot est obligatoire.
+            </div>
+            <div *ngIf="showSecurityCaptchaError" class="security-error">
+              Captcha incorrect. Veuillez reessayer.
+            </div>
+          </div>
+
+          <div *ngIf="securityForm.errors?.['serverError'] && securityFormSubmitted" class="security-error">
+            {{ securityForm.errors?.['serverError'] }}
+          </div>
+
+          <div class="security-actions">
+            <div class="voice-inline-actions">
+              <button type="submit" class="confirm-security-button" [disabled]="!canSubmitSecurityForm">
+                {{ securityLoading ? 'Chargement...' : 'Confirmer' }}
+              </button>
+              <button type="button" class="voice-help" (click)="announceProfileHelp('confirmSecurity')" aria-label="Lire l'aide du bouton confirmer">
+                <mat-icon>{{ isProfileVoiceActive('confirmSecurity') ? 'volume_up' : 'volume_off' }}</mat-icon>
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>
+    </ng-container>
+
+    <ng-container *ngIf="selectedTab === 2">
+      <section class="profile-card face-id-card">
+        <h2>Face ID</h2>
+        <p class="subtitle">Enregistrez votre visage une seule fois pour vous connecter plus rapidement.</p>
+
+        <div class="face-id-status" [class.face-id-status--enabled]="faceIdEnabled">
+          <mat-icon>{{ faceIdEnabled ? 'verified_user' : 'face' }}</mat-icon>
+          <span>{{ faceIdEnabled ? 'Face ID est deja enregistre pour ce compte.' : 'Face ID n est pas encore enregistre.' }}</span>
+        </div>
+
+        <div class="face-id-camera">
+          <video #faceEnrollVideo class="face-id-video" playsinline muted></video>
+        </div>
+
+        <p class="security-hint">
+          Placez votre visage complet, clair, sans flou et face a la camera. Cette operation se fait une seule fois.
+        </p>
+
+        <div
+          *ngIf="faceIdMessage"
+          class="security-status"
+          [class.security-status--success]="faceIdMessageType === 'success'"
+          [class.security-status--error]="faceIdMessageType === 'error'"
+          role="alert"
+          aria-live="assertive">
+          <mat-icon>{{ faceIdMessageType === 'success' ? 'check_circle' : faceIdMessageType === 'error' ? 'info' : 'info' }}</mat-icon>
+          {{ faceIdMessage }}
+        </div>
+
+        <div class="security-actions face-id-actions">
+          <button type="button" class="confirm-security-button" (click)="startFaceIdCamera()" [disabled]="faceIdEnabled || faceIdCameraActive">
+            <mat-icon>photo_camera</mat-icon>
+            Ouvrir la camera
+          </button>
+          <button type="button" class="confirm-security-button" (click)="captureFaceId()" [disabled]="faceIdEnabled || !faceIdCameraReady || faceIdLoading">
+            <mat-icon>verified_user</mat-icon>
+            {{ faceIdLoading ? 'Enregistrement...' : 'Enregistrer Face ID' }}
+          </button>
+          <button type="button" class="verify-password-button" (click)="stopFaceIdCamera()" [disabled]="!faceIdCameraActive">
+            <mat-icon>close</mat-icon>
+            Annuler
+          </button>
+        </div>
+      </section>
+    </ng-container>
+
+    <ng-container *ngIf="selectedTab === 3">
+      <section class="profile-card profile-preview" *ngIf="savedProfile; else emptyPreviewState">
+        <h2>Apercu du profil</h2>
+        <p class="subtitle">Derniere version enregistree de vos informations</p>
+        <div class="preview-avatar-wrap">
+          <div class="avatar-circle" *ngIf="!savedProfile.avatarDataUrl">{{ savedProfile.fullName.charAt(0).toUpperCase() || 'U' }}</div>
+          <img *ngIf="savedProfile.avatarDataUrl" [src]="savedProfile.avatarDataUrl" alt="Photo profil" class="avatar-image" />
+        </div>
+
+        <h3>{{ savedProfile.fullName }}</h3>
+        <p class="preview-email">{{ savedProfile.email }}</p>
+
+        <div class="preview-grid">
+          <div class="preview-row"><strong>Telephone</strong><span>{{ savedProfile.phone }}</span></div>
+          <div class="preview-row"><strong>Date de naissance</strong><span>{{ savedProfile.birthdate }}</span></div>
+          <div class="preview-row"><strong>Specialite</strong><span>{{ savedProfile.specialization }}</span></div>
+          <div class="preview-row"><strong>Adresse</strong><span>{{ savedProfile.address }}</span></div>
+        </div>
+
+        <div class="preview-bio" *ngIf="savedProfile.bio">
+          <h4>Biographie</h4>
+          <p>{{ savedProfile.bio }}</p>
+        </div>
+
+      </section>
+
+      <ng-template #emptyPreviewState>
+        <section class="profile-card profile-preview-empty">
+          <h2>Apercu du profil</h2>
+          <p class="subtitle">Completez d'abord votre profil pour afficher l'apercu final.</p>
+        </section>
+      </ng-template>
+    </ng-container>
+  </div>
+
+  <div class="sr-only" aria-live="polite" aria-atomic="true">
+    {{ screenReaderMessage }}
+  </div>
+</div>

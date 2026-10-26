@@ -1,0 +1,489 @@
+<section class="forum-shell">
+  <div class="forum-hero">
+    <div class="forum-hero__icon">
+      <mat-icon>forum</mat-icon>
+    </div>
+    <div class="forum-hero__copy">
+      <h2>Entraide Etudiante - Forum & Chat</h2>
+      <p>
+        Posez vos questions et recevez de l'aide de vos camarades. Lorsqu'un etudiant repond, un
+        chat prive s'ouvre automatiquement pour faciliter l'echange.
+      </p>
+    </div>
+  </div>
+
+  <div class="forum-toolbar">
+    <div class="forum-search">
+      <input type="text" [(ngModel)]="searchTerm" placeholder="Rechercher une question..." />
+      <button
+        *ngIf="searchTerm"
+        type="button"
+        class="forum-search__clear"
+        (click)="searchTerm = ''"
+        aria-label="Vider la recherche"
+      >
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+
+    <button type="button" class="forum-help-button" (click)="openHelpModal()">
+      Demander de l'aide
+    </button>
+  </div>
+
+  <div class="forum-filter-switch">
+    <button
+      type="button"
+      class="forum-filter-switch__btn"
+      [class.forum-filter-switch__btn--active]="requestFilter === 'others'"
+      (click)="setRequestFilter('others')"
+    >
+      Tous les demandes
+      <span class="forum-filter-switch__badge" *ngIf="newOthersCount > 0">+{{ newOthersCount }}</span>
+    </button>
+    <button
+      type="button"
+      class="forum-filter-switch__btn"
+      [class.forum-filter-switch__btn--active]="requestFilter === 'mine'"
+      (click)="setRequestFilter('mine')"
+    >
+      Mes demandes
+      <span class="forum-filter-switch__badge" *ngIf="newMineCount > 0">+{{ newMineCount }}</span>
+    </button>
+  </div>
+
+  <div class="forum-stats">
+    <article class="forum-stat">
+      <strong>{{ openQuestionsCount }}</strong>
+      <span>Questions ouvertes</span>
+    </article>
+
+    <article class="forum-stat">
+      <strong>{{ repliesTodayCount }}</strong>
+      <span>Reponses aujourd'hui</span>
+    </article>
+  </div>
+
+  <section class="forum-section">
+    <h3>Demandes d'aide recentes</h3>
+    <p class="forum-success" *ngIf="successMessage">{{ successMessage }}</p>
+    <p class="forum-error" *ngIf="errorMessage">{{ errorMessage }}</p>
+
+    <article
+      *ngFor="let request of filteredRequests"
+      class="forum-request"
+      [class.forum-request--consulted]="isConsultHighlighted(request.id)"
+    >
+      <div class="forum-request__top-row">
+        <div class="forum-request__header">
+          <div class="forum-request__avatar">
+            <img
+              *ngIf="request.authorAvatarDataUrl"
+              [src]="request.authorAvatarDataUrl"
+              [alt]="'Photo de ' + request.author"
+            />
+            <span *ngIf="!request.authorAvatarDataUrl">{{ avatarInitials(request.author) }}</span>
+          </div>
+          <div>
+            <h4>{{ request.author }}</h4>
+            <p *ngIf="classLabel(request.level)">{{ classLabel(request.level) }}</p>
+          </div>
+        </div>
+
+        <button
+          *ngIf="request.canDelete"
+          type="button"
+          class="forum-request__delete"
+          (click)="askDeleteRequest(request)"
+        >
+          Supprimer
+        </button>
+      </div>
+
+      <div class="forum-request__content">
+        <p class="forum-request__line">
+          <span class="forum-request__label">Sujet :</span>
+          <span class="forum-request__value">{{ request.title }}</span>
+        </p>
+        <p class="forum-request__line forum-request__line--message">
+          <span class="forum-request__label">Message :</span>
+          <span class="forum-request__value">{{ request.message }}</span>
+        </p>
+      </div>
+
+      <div class="forum-request__meta">
+        <span>Heure {{ request.time }}</span>
+        <span>{{ request.replies }} reponses</span>
+      </div>
+
+      <div class="forum-request__status-row">
+        <span
+          class="forum-status"
+          [class.forum-status--pending]="request.status === 'En attente'"
+          [class.forum-status--active]="request.status === 'En discussion'"
+        >
+          {{ request.status }}
+        </span>
+      </div>
+
+      <button type="button" class="forum-request__action" (click)="openResponseChoice(request)">
+        Repondre
+      </button>
+    </article>
+
+    <p class="forum-empty" *ngIf="!loading && filteredRequests.length === 0">
+      Aucune demande pour le moment.
+    </p>
+  </section>
+</section>
+
+<div class="forum-modal-backdrop" *ngIf="openedChatRequest as request" (click)="closeChat()">
+  <div class="forum-modal" (click)="$event.stopPropagation()">
+    <div class="forum-modal__header">
+      <div>
+        <h3>Chat avec {{ request.author }}</h3>
+      </div>
+      <button type="button" class="forum-close" (click)="closeChat()">X</button>
+    </div>
+
+    <div class="forum-modal__body">
+      <p class="forum-error" *ngIf="chatErrorMessage">{{ chatErrorMessage }}</p>
+      <article *ngFor="let message of chatMessages" class="forum-chat-message">
+        <div class="forum-chat-message__avatar">
+          <img
+            *ngIf="message.senderAvatarDataUrl"
+            [src]="message.senderAvatarDataUrl"
+            [alt]="'Photo de ' + message.senderName"
+          />
+          <span *ngIf="!message.senderAvatarDataUrl">{{ avatarInitials(message.senderName) }}</span>
+        </div>
+        <div
+          class="forum-chat-message__bubble"
+          [class.forum-chat-message__bubble--request]="message.senderType === 'request'"
+          [class.forum-chat-message__bubble--author]="message.senderType === 'author'"
+          [class.forum-chat-message__bubble--helper]="message.senderType === 'helper'"
+        >
+          <p>{{ message.text }}</p>
+          <div class="forum-chat-attachments" *ngIf="message.attachments?.length">
+            <button
+              *ngFor="let attachment of message.attachments"
+              type="button"
+              (click)="openAttachmentPreview(attachment, $event)"
+              class="forum-chat-attachment">
+              <mat-icon>{{ attachment.kind === 'video' ? 'videocam' : 'attach_file' }}</mat-icon>
+              {{ attachment.name }}
+            </button>
+          </div>
+          <p *ngIf="message.transcript" class="forum-transcript">
+            Transcription : {{ message.transcript }}
+          </p>
+          <span>{{ message.senderName }} · {{ message.time }}</span>
+        </div>
+      </article>
+
+      <p class="forum-chat-loading" *ngIf="chatLoading">Chargement du chat...</p>
+    </div>
+
+    <div class="forum-composer-zone">
+      <div class="forum-attachment-preview" *ngIf="chatAttachment">
+        <mat-icon>{{ chatAttachment.kind === 'video' ? 'videocam' : 'attach_file' }}</mat-icon>
+        <span>{{ chatAttachment.name }}</span>
+        <button type="button" (click)="removeChatAttachment()" aria-label="Retirer la piece jointe">X</button>
+      </div>
+
+      <div class="forum-modal__composer">
+        <input
+          type="text"
+          [(ngModel)]="chatDraft"
+          (keydown.enter)="sendChatMessage()"
+          placeholder="Ecrivez votre message..."
+        />
+        <input
+          #chatFileInput
+          type="file"
+          hidden
+          (change)="onChatAttachmentSelected($event)"
+          accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.png,.jpg,.jpeg"
+        />
+        <button type="button" class="forum-composer-plus" (click)="chatFileInput.click()" aria-label="Ajouter un document">
+          <mat-icon>add</mat-icon>
+        </button>
+        <button type="button" (click)="sendChatMessage()" aria-label="Envoyer le message">
+          <mat-icon>send</mat-icon>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="forum-modal-backdrop" *ngIf="responseChoiceRequest as request" (click)="closeResponseChoice()">
+  <div class="forum-modal forum-modal--choice" (click)="$event.stopPropagation()">
+    <div class="forum-modal__header">
+      <div>
+        <h3>Choisir le type de reponse</h3>
+        <p>{{ request.title }}</p>
+      </div>
+      <button type="button" class="forum-close" (click)="closeResponseChoice()">X</button>
+    </div>
+    <div class="forum-response-choice">
+      <button type="button" (click)="chooseNormalResponse()">
+        <mat-icon>chat</mat-icon>
+        <strong>Chat normal</strong>
+        <span>Ecrire une reponse et ajouter un document si besoin.</span>
+      </button>
+      <button type="button" (click)="chooseVideoResponse()">
+        <mat-icon>videocam</mat-icon>
+        <strong>Reponse video</strong>
+        <span>Ouvrir la camera, enregistrer audio/video et generer un texte.</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="forum-modal-backdrop" *ngIf="videoRecorderOpen" (click)="closeVideoRecorder()">
+  <div class="forum-modal forum-modal--video" (click)="$event.stopPropagation()">
+    <div class="forum-modal__header">
+      <div>
+        <h3>Enregistrer une reponse video</h3>
+        <p>La transcription texte est generee pendant l'enregistrement si le navigateur le permet.</p>
+      </div>
+      <button type="button" class="forum-close" (click)="closeVideoRecorder()">X</button>
+    </div>
+    <div class="forum-video-recorder">
+      <video id="forum-video-preview" autoplay muted playsinline></video>
+      <p class="forum-error" *ngIf="videoErrorMessage">{{ videoErrorMessage }}</p>
+      <div class="forum-video-transcript">
+        <strong>Texte genere</strong>
+        <p>{{ videoTranscript || 'La transcription apparaitra ici pendant la reponse.' }}</p>
+      </div>
+      <div class="forum-modal__actions">
+        <button type="button" class="forum-secondary" (click)="closeVideoRecorder()">Annuler</button>
+        <button type="button" class="forum-primary" *ngIf="!videoRecording" (click)="startVideoRecording()">
+          Demarrer
+        </button>
+        <button type="button" class="forum-primary" *ngIf="videoRecording" (click)="stopVideoRecording()">
+          Arreter
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="forum-modal-backdrop" *ngIf="videoSavedConfirmOpen" (click)="closeVideoSavedConfirm()">
+  <div class="forum-modal forum-modal--confirm" (click)="$event.stopPropagation()">
+    <div class="forum-modal__header">
+      <div>
+        <h3>Enregistrement ajoute</h3>
+        <p>La video et la transcription sont pretes dans le chat. Cliquez sur envoyer pour les sauvegarder.</p>
+      </div>
+      <button type="button" class="forum-close" (click)="closeVideoSavedConfirm()">X</button>
+    </div>
+    <div class="forum-confirm-body">
+      <p>{{ chatAttachment?.name }}</p>
+      <p *ngIf="videoTranscript">Transcription : {{ videoTranscript }}</p>
+    </div>
+    <div class="forum-modal__actions">
+      <button type="button" class="forum-primary" (click)="closeVideoSavedConfirm()">Retour au chat</button>
+    </div>
+  </div>
+</div>
+
+<div class="forum-modal-backdrop" *ngIf="selectedAttachment as attachment" (click)="closeAttachmentPreview()">
+  <div class="forum-modal forum-modal--attachment" (click)="$event.stopPropagation()">
+    <div class="forum-modal__header">
+      <div>
+        <h3>{{ attachment.name }}</h3>
+        <p>Consultation du fichier joint</p>
+      </div>
+      <button type="button" class="forum-close" (click)="closeAttachmentPreview()">X</button>
+    </div>
+    <div class="forum-attachment-viewer">
+      <video *ngIf="attachment.kind === 'video'" [src]="attachment.dataUrl" controls></video>
+      <img *ngIf="isImageAttachment(attachment)" [src]="attachment.dataUrl" [alt]="attachment.name" />
+      <div class="forum-pdf-preview" *ngIf="isPdfAttachment(attachment)">
+        <div class="forum-pdf-toolbar">
+          <button
+            type="button"
+            class="forum-pdf-voice-button"
+            [class.forum-pdf-voice-button--active]="isAttachmentPdfVoiceActive(attachment)"
+            [disabled]="attachmentPdfVoiceLoading"
+            (click)="toggleAttachmentPdfVoice(attachment)"
+          >
+            <mat-icon>
+              {{ isAttachmentPdfVoiceActive(attachment) ? 'stop_circle' : 'volume_up' }}
+            </mat-icon>
+            {{ attachmentPdfVoiceLoading ? 'Chargement...' : isAttachmentPdfVoiceActive(attachment) ? 'Arreter la lecture' : 'Lire le PDF' }}
+          </button>
+          <p *ngIf="attachmentPdfVoiceMessage">{{ attachmentPdfVoiceMessage }}</p>
+        </div>
+        <iframe [src]="trustedAttachmentUrl(attachment)" title="Apercu du document"></iframe>
+      </div>
+      <iframe *ngIf="attachment.mimeType?.startsWith('text/')" [src]="trustedAttachmentUrl(attachment)" title="Apercu du texte"></iframe>
+      <div class="forum-office-preview" *ngIf="isOfficeAttachment(attachment)">
+        <div class="forum-office-preview__icon">
+          <mat-icon>description</mat-icon>
+        </div>
+        <div>
+          <span>{{ attachmentExtension(attachment) }}</span>
+          <h4>{{ attachment.name }}</h4>
+          <p>{{ attachment.mimeType || 'Document bureautique' }}</p>
+          <p>{{ attachmentSizeLabel(attachment) }}</p>
+        </div>
+      </div>
+      <div class="forum-office-preview" *ngIf="!canPreviewAttachment(attachment)">
+        <div class="forum-office-preview__icon">
+          <mat-icon>insert_drive_file</mat-icon>
+        </div>
+        <div>
+          <span>{{ attachmentExtension(attachment) }}</span>
+          <h4>{{ attachment.name }}</h4>
+          <p>{{ attachment.mimeType || 'Fichier joint' }}</p>
+          <p>{{ attachmentSizeLabel(attachment) }}</p>
+        </div>
+      </div>
+    </div>
+    <div class="forum-modal__actions">
+      <a class="forum-primary forum-download-link" [href]="attachment.dataUrl" [download]="attachment.name">
+        Telecharger
+      </a>
+    </div>
+  </div>
+</div>
+
+<div class="forum-modal-backdrop" *ngIf="showHelpModal" (click)="closeHelpModal()">
+  <div class="forum-modal forum-modal--help" (click)="$event.stopPropagation()">
+    <div class="forum-modal__header">
+      <div>
+        <h3>Demander de l'aide</h3>
+      </div>
+      <button type="button" class="forum-close" (click)="closeHelpModal()">X</button>
+    </div>
+
+    <div class="forum-help-note">
+      <span>
+        Votre demande sera envoyee a tous les etudiants de la plateforme. Ceux qui souhaitent vous
+        aider pourront ouvrir un chat prive avec vous.
+      </span>
+      <button
+        type="button"
+        class="voice-help voice-help--note"
+        (click)="announceHelpTopic('note')"
+        aria-label="Lire l'aide generale du formulaire"
+      >
+        <mat-icon>{{ isHelpVoiceActive('note') ? 'volume_up' : 'volume_off' }}</mat-icon>
+      </button>
+    </div>
+
+    <label class="forum-field">
+      <span>Sujet</span>
+      <div class="forum-field__control">
+        <input type="text" [(ngModel)]="helpSubject" placeholder="Ex: Aide sur les boucles en Java" />
+        <button
+          type="button"
+          class="voice-help voice-help--inside-field"
+          (click)="toggleHelpDictation('subject')"
+          aria-label="Activer ou desactiver la dictee vocale du champ sujet"
+        >
+          <mat-icon>{{ isHelpDictationActive('subject') ? 'mic' : 'mic_off' }}</mat-icon>
+        </button>
+        <button
+          type="button"
+          class="voice-help voice-help--inside-field voice-help--inside-field-secondary"
+          (click)="announceHelpTopic('subject')"
+          aria-label="Lire l'aide du champ sujet"
+        >
+          <mat-icon>{{ isHelpVoiceActive('subject') ? 'volume_up' : 'volume_off' }}</mat-icon>
+        </button>
+      </div>
+    </label>
+
+    <label class="forum-field">
+      <span>Message</span>
+      <div class="forum-field__control forum-field__control--textarea">
+        <textarea
+          rows="4"
+          [(ngModel)]="helpMessage"
+          placeholder="Decrivez votre probleme en detail..."
+        ></textarea>
+        <button
+          type="button"
+          class="voice-help voice-help--inside-field voice-help--textarea"
+          (click)="toggleHelpDictation('message')"
+          aria-label="Activer ou desactiver la dictee vocale du champ message"
+        >
+          <mat-icon>{{ isHelpDictationActive('message') ? 'mic' : 'mic_off' }}</mat-icon>
+        </button>
+        <button
+          type="button"
+          class="voice-help voice-help--inside-field voice-help--inside-field-secondary voice-help--textarea"
+          (click)="announceHelpTopic('message')"
+          aria-label="Lire l'aide du champ message"
+        >
+          <mat-icon>{{ isHelpVoiceActive('message') ? 'volume_up' : 'volume_off' }}</mat-icon>
+        </button>
+      </div>
+    </label>
+
+    <p class="forum-error forum-help-error" *ngIf="helpFormErrorMessage">
+      {{ helpFormErrorMessage }}
+    </p>
+
+    <div class="forum-modal__actions">
+      <button type="button" class="forum-secondary" (click)="closeHelpModal()">Annuler</button>
+      <div class="forum-submit-actions">
+        <button
+          type="button"
+          class="forum-primary"
+          [disabled]="!helpSubject.trim() || !helpMessage.trim() || submitting"
+          (click)="submitHelpRequest()"
+        >
+          Envoyer la demande
+        </button>
+        <button
+          type="button"
+          class="voice-help"
+          (click)="announceHelpTopic('submitHelp')"
+          aria-label="Lire l'aide du bouton envoyer la demande"
+        >
+          <mat-icon>{{ isHelpVoiceActive('submitHelp') ? 'volume_up' : 'volume_off' }}</mat-icon>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div
+  class="forum-modal-backdrop"
+  *ngIf="showSendSuccessModal"
+  (click)="closeSendSuccessModal()"
+>
+  <div class="forum-success-modal" (click)="$event.stopPropagation()">
+    <div class="forum-success-modal__icon">OK</div>
+    <h3>{{ sendSuccessTitle }}</h3>
+    <p>{{ sendSuccessMessage }}</p>
+  </div>
+</div>
+
+<div class="forum-modal-backdrop" *ngIf="deleteConfirmRequest as request" (click)="closeDeleteConfirm()">
+  <div class="forum-modal forum-modal--confirm" (click)="$event.stopPropagation()">
+    <div class="forum-modal__header">
+      <div>
+        <h3>Confirmer la suppression</h3>
+        <p>Supprimer cette demande d'aide ?</p>
+      </div>
+      <button type="button" class="forum-close" (click)="closeDeleteConfirm()">X</button>
+    </div>
+    <div class="forum-confirm-body">
+      <strong>{{ request.title }}</strong>
+      <p>{{ request.message }}</p>
+    </div>
+    <div class="forum-modal__actions">
+      <button type="button" class="forum-secondary" (click)="closeDeleteConfirm()">Annuler</button>
+      <button type="button" class="forum-primary forum-primary--danger" (click)="confirmDeleteRequest()">Supprimer</button>
+    </div>
+  </div>
+</div>
+
+<div class="sr-only" aria-live="polite" aria-atomic="true">
+  {{ screenReaderMessage }}
+</div>

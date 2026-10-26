@@ -1,0 +1,33 @@
+server:
+  extraScrapeConfigs:
+    - job_name: eduvia-backend
+      metrics_path: /metrics
+      static_configs:
+        - targets:
+            - eduvia-backend.eduvia.svc.cluster.local:3000
+
+    - job_name: eduvia-frontend
+      metrics_path: /
+      static_configs:
+        - targets:
+            - eduvia-frontend.eduvia.svc.cluster.local:80
+
+serverFiles:
+  alerting_rules.yml:
+    groups:
+      - name: eduvia.rules
+        rules:
+          - alert: EduViaBackendDown
+            expr: up{job="eduvia-backend"} == 0
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: EduVia backend is down
+          - alert: EduViaFrontendDown
+            expr: up{job="eduvia-frontend"} == 0
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: EduVia frontend is down

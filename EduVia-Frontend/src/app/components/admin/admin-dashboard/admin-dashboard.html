@@ -1,0 +1,74 @@
+<div class="admin-shell">
+  <header class="admin-header">
+    <div class="brand-block">
+      <img class="brand-logo" src="/logo.png" alt="EduVia" />
+      <div class="brand-copy">
+        <h1>Espace Administration</h1>
+        <p>EduVia - Learn smart. Think EduVia.</p>
+      </div>
+    </div>
+    <div class="admin-header-actions">
+      <button class="logout-button" type="button" (click)="onLogout()">
+        <mat-icon>logout</mat-icon>
+        <span>Deconnexion</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="admin-content">
+    <nav class="tab-nav" aria-label="Navigation administration">
+      <button
+        *ngFor="let tab of tabs"
+        type="button"
+        class="tab-button"
+        [class.active]="selectedTab === tab.id"
+        (click)="selectTab(tab.id)">
+        <mat-icon>{{ tab.icon }}</mat-icon>
+        <span>{{ tab.label }}</span>
+      </button>
+    </nav>
+
+    <section *ngIf="selectedTab === 'overview'" class="overview-panel">
+      <article class="hero-card hero-card--overview">
+        <h2>Tableau de bord principal</h2>
+        <p>
+          Bienvenue dans le panneau d'administration. Gerez les utilisateurs et supervisez la
+          plateforme.
+        </p>
+        <p *ngIf="isLoadingOverview" class="sync-note">Synchronisation des donnees en cours...</p>
+      </article>
+
+      <div class="stats-grid">
+        <article *ngFor="let card of overviewCards" class="stat-card">
+          <div class="stat-icon" [ngClass]="'stat-icon--' + card.colorClass">
+            <mat-icon>{{ card.icon }}</mat-icon>
+          </div>
+          <div class="stat-value">{{ card.value }}</div>
+          <div class="stat-label">{{ card.label }}</div>
+        </article>
+      </div>
+
+      <article class="activity-card">
+        <h3>Activite recente</h3>
+
+        <div class="activity-list">
+          <div *ngFor="let activity of recentActivities" class="activity-item">
+            <div>
+              <p>{{ activity.description }}</p>
+              <span>{{ activity.time }}</span>
+            </div>
+            <strong [ngClass]="'activity-change--' + activity.colorClass">{{ activity.change }}</strong>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section *ngIf="selectedTab === 'users'" class="embedded-panel">
+      <app-user-management (usersUpdated)="onUsersUpdated()"></app-user-management>
+    </section>
+
+    <section *ngIf="selectedTab === 'internships'" class="embedded-panel">
+      <app-internship-management></app-internship-management>
+    </section>
+  </main>
+</div>

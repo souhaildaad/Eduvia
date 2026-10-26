@@ -1,0 +1,32 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Clone') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Install Django dependencies') {
+            steps {
+                dir('EduVia django') { sh 'python -m pip install -r requirements.txt' }
+            }
+        }
+        stage('Validate Django configuration') {
+            steps {
+                dir('EduVia django') { sh 'python manage.py check && python manage.py makemigrations --check --dry-run' }
+            }
+        }
+    }
+
+    post {
+        success {
+            build job: 'CD-BACKEND', wait: false
+        }
+
+        failure {
+            echo 'CI Backend failed. CD Backend will not start.'
+        }
+    }
+}

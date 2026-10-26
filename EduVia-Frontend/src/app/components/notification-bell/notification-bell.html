@@ -1,0 +1,259 @@
+<div class="notification-wrapper">
+  <button
+    type="button"
+    class="notification-button"
+    mat-icon-button
+    aria-label="Notifications"
+    [matBadge]="unreadCount"
+    [matBadgeHidden]="unreadCount === 0"
+    matBadgeColor="warn"
+    (click)="toggleDropdown()">
+    <mat-icon>notifications</mat-icon>
+  </button>
+
+  <div *ngIf="showDropdown" class="notification-dropdown">
+    <div class="notification-dropdown__header">
+      <span>Notifications</span>
+      <button
+        type="button"
+        class="notification-dropdown__close"
+        (click)="closeDropdown()"
+        aria-label="Fermer les notifications">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+
+    <div *ngIf="notifications.length === 0" class="notification-empty">
+      Aucune notification
+    </div>
+
+    <div *ngFor="let notification of notifications" class="notification-item">
+      <div class="notification-text">
+        <div class="notification-title-row">
+          <strong>{{ notification.title }}</strong>
+          <span class="notification-state" [class.notification-state--read]="notification.read">
+            {{ notification.read ? 'Lu' : 'Non lu' }}
+          </span>
+        </div>
+        <p>{{ notification.message }}</p>
+      </div>
+
+      <div class="notification-actions">
+        <button class="consult-button" type="button" (click)="consultNotification(notification)">
+          Consulter
+        </button>
+        <button class="delete-button" type="button" (click)="deleteNotification(notification.id)">
+          Supprimer
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div *ngIf="showDialog" class="modal-backdrop" (click)="closeDialog()">
+  <section class="modal-panel" (click)="$event.stopPropagation()">
+    <ng-container *ngIf="isDetailNotification(selectedNotification); else passwordDialog">
+      <div class="modal-header">
+        <h2>{{ selectedNotification?.action?.reminderTitle || selectedNotification?.title }}</h2>
+        <button type="button" class="close-button" (click)="closeDialog()" aria-label="Fermer">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+      <div class="change-password-form">
+        <div class="password-rules-card">
+          <div style="white-space: pre-line;">{{ selectedNotification?.action?.reminderBody || selectedNotification?.message }}</div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-button" (click)="deleteNotification(selectedNotification!.id); closeDialog()">
+            Supprimer
+          </button>
+          <button
+            type="button"
+            class="primary-button"
+            [disabled]="selectedNotification?.read"
+            (click)="markNotificationAsRead(selectedNotification!)"
+          >
+            Marquer comme lu
+          </button>
+        </div>
+      </div>
+    </ng-container>
+
+    <ng-template #passwordDialog>
+    <div class="modal-header">
+      <h2>Changer le mot de passe</h2>
+      <button type="button" class="close-button" (click)="closeDialog()" aria-label="Fermer">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+
+    <form *ngIf="passwordForm" class="change-password-form" [formGroup]="passwordForm" (submit)="$event.preventDefault(); savePassword()">
+      <div class="field field--with-action">
+        <div class="password-field">
+          <input
+            [type]="showCurrentPassword ? 'text' : 'password'"
+            formControlName="currentPassword"
+            placeholder="Ancien mot de passe*"
+            (focus)="passwordForm.get('currentPassword')?.markAsTouched()" />
+          <button
+            type="button"
+            class="field-help"
+            (click)="announceField('currentPassword')"
+            aria-label="Lire l'instruction ancien mot de passe">
+            <mat-icon>{{ isVoiceFieldActive('currentPassword') ? 'volume_up' : 'volume_off' }}</mat-icon>
+          </button>
+          <button
+            type="button"
+            class="password-toggle"
+            (click)="togglePasswordVisibility('current')"
+            [attr.aria-label]="showCurrentPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'">
+            <span class="eye-icon" [class.eye-icon--off]="showCurrentPassword">
+              <span class="eye-icon__shape"></span>
+              <span class="eye-icon__pupil"></span>
+              <span class="eye-icon__slash"></span>
+            </span>
+          </button>
+        </div>
+        <div *ngIf="passwordForm.get('currentPassword')?.touched && passwordForm.get('currentPassword')?.hasError('required')" class="field-error">
+          L'ancien mot de passe est obligatoire.
+        </div>
+      </div>
+
+      <div class="field field--with-action">
+        <div class="password-field">
+          <input
+            [type]="showNewPassword ? 'text' : 'password'"
+            formControlName="newPassword"
+            placeholder="Nouveau mot de passe*"
+            (input)="onNewPasswordInput()"
+            (focus)="passwordForm.get('newPassword')?.markAsTouched()" />
+          <button
+            type="button"
+            class="field-help"
+            (click)="announceField('newPassword')"
+            aria-label="Lire l'instruction nouveau mot de passe">
+            <mat-icon>{{ isVoiceFieldActive('newPassword') ? 'volume_up' : 'volume_off' }}</mat-icon>
+          </button>
+          <button
+            type="button"
+            class="password-toggle"
+            (click)="togglePasswordVisibility('new')"
+            [attr.aria-label]="showNewPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'">
+            <span class="eye-icon" [class.eye-icon--off]="showNewPassword">
+              <span class="eye-icon__shape"></span>
+              <span class="eye-icon__pupil"></span>
+              <span class="eye-icon__slash"></span>
+            </span>
+          </button>
+        </div>
+        <div *ngIf="passwordForm.get('newPassword')?.touched && passwordForm.get('newPassword')?.hasError('required')" class="field-error">
+          Le nouveau mot de passe est obligatoire.
+        </div>
+        <div class="password-rules-card">
+          <div class="password-rules-title">Le mot de passe doit contenir :</div>
+          <div
+            *ngFor="let requirement of passwordRequirements"
+            class="password-rule"
+            [class.password-rule--valid]="newPasswordRequirementState[requirement.key]"
+            [class.password-rule--invalid]="!newPasswordRequirementState[requirement.key]">
+            <span class="password-rule-icon">{{ newPasswordRequirementState[requirement.key] ? '✓' : '✕' }}</span>
+            <span>{{ requirement.label }}</span>
+          </div>
+        </div>
+        <div *ngIf="!allNewPasswordRequirementsMet" class="field-hint">
+          Le champ confirmer le mot de passe devient actif quand toutes les conditions sont valides.
+        </div>
+      </div>
+
+      <div class="field field--with-action">
+        <div class="password-field">
+          <input
+            [type]="showConfirmPassword ? 'text' : 'password'"
+            formControlName="confirmPassword"
+            placeholder="Confirmer le mot de passe*"
+            (focus)="passwordForm.get('confirmPassword')?.markAsTouched()" />
+          <button
+            type="button"
+            class="field-help"
+            (click)="announceField('confirmPassword')"
+            aria-label="Lire l'instruction confirmer le mot de passe">
+            <mat-icon>{{ isVoiceFieldActive('confirmPassword') ? 'volume_up' : 'volume_off' }}</mat-icon>
+          </button>
+          <button
+            type="button"
+            class="password-toggle"
+            (click)="togglePasswordVisibility('confirm')"
+            [attr.aria-label]="showConfirmPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'">
+            <span class="eye-icon" [class.eye-icon--off]="showConfirmPassword">
+              <span class="eye-icon__shape"></span>
+              <span class="eye-icon__pupil"></span>
+              <span class="eye-icon__slash"></span>
+            </span>
+          </button>
+        </div>
+        <div *ngIf="passwordForm.get('confirmPassword')?.touched && passwordForm.get('confirmPassword')?.hasError('required')" class="field-error">
+          La confirmation du mot de passe est obligatoire.
+        </div>
+        <div *ngIf="showPasswordMismatchError" class="field-error">
+          La confirmation doit etre identique au nouveau mot de passe.
+        </div>
+      </div>
+
+      <div class="captcha-panel">
+        <div class="captcha-header">
+          <span>Verification anti-robot</span>
+          <div class="captcha-header-actions">
+            <button
+              type="button"
+              class="field-help field-help--inline"
+              (click)="announceField('captcha')"
+              aria-label="Lire l'instruction captcha">
+              <mat-icon>{{ isVoiceFieldActive('captcha') ? 'volume_up' : 'volume_off' }}</mat-icon>
+            </button>
+            <button type="button" class="refresh-button" (click)="generateCaptcha(); passwordForm.updateValueAndValidity()" aria-label="Rafraichir captcha">
+              <mat-icon>refresh</mat-icon>
+            </button>
+          </div>
+        </div>
+
+        <div class="captcha-challenge">{{ captchaPrompt }}</div>
+
+        <mat-checkbox formControlName="isNotRobot" (click)="passwordForm.get('isNotRobot')?.markAsTouched()">
+          Je confirme que je ne suis pas un robot
+        </mat-checkbox>
+
+        <input
+          class="captcha-input"
+          type="text"
+          formControlName="captchaAnswer"
+          placeholder="Entrez le resultat"
+          (focus)="passwordForm.get('captchaAnswer')?.markAsTouched()" />
+
+        <div *ngIf="passwordForm.get('isNotRobot')?.touched && passwordForm.get('isNotRobot')?.hasError('required')" class="captcha-error">
+          La verification anti-robot est obligatoire.
+        </div>
+        <div *ngIf="showCaptchaError" class="captcha-error">
+          Captcha incorrect. Veuillez reessayer.
+        </div>
+      </div>
+
+      <div class="sr-only" aria-live="polite" aria-atomic="true">
+        {{ screenReaderMessage }}
+      </div>
+
+      <div *ngIf="passwordForm.errors?.['serverError'] && formSubmitted" class="captcha-error">
+        {{ passwordForm.errors?.['serverError'] }}
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="secondary-button" (click)="closeDialog()">Annuler</button>
+        <button type="button" class="primary-button" [disabled]="!isSaveEnabled" (click)="savePassword()">
+          {{ isLoading ? 'En cours...' : 'Sauvegarder' }}
+        </button>
+      </div>
+    </form>
+    </ng-template>
+  </section>
+</div>

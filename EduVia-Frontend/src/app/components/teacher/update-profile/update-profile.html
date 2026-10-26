@@ -1,0 +1,161 @@
+<div class="profile-page">
+
+  <div class="page-header">
+    <h1>Paramètres du Profil</h1>
+    <p>Gérez vos informations personnelles et paramètres de sécurité</p>
+  </div>
+
+  <mat-tab-group class="profile-tabs">
+
+    <!-- ===================== -->
+    <!-- INFORMATIONS PERSONNELLES -->
+    <!-- ===================== -->
+    <mat-tab label="Informations Personnelles">
+
+      <div class="card-container">
+
+        <h2>Mise à jour du profil</h2>
+        <p class="subtitle">Mettez à jour vos informations personnelles</p>
+
+        <!-- Avatar Section -->
+        <div class="avatar-section">
+          <div class="avatar-circle">
+            {{ profileForm.get('fullName')?.value?.charAt(0) || 'M' }}
+          </div>
+
+          <button mat-stroked-button>
+            <mat-icon>upload</mat-icon>
+            Changer la photo
+          </button>
+
+          <span class="file-info">JPG, PNG ou GIF. Max 2MB.</span>
+        </div>
+
+        <form *ngIf="profileForm" [formGroup]="profileForm" (ngSubmit)="onSubmit()" class="profile-form">
+
+          <div class="form-row">
+            <mat-form-field appearance="outline">
+              <mat-label>Nom complet</mat-label>
+              <input matInput formControlName="fullName">
+              <mat-icon matPrefix>person</mat-icon>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-label>Email</mat-label>
+              <input matInput formControlName="email">
+              <mat-icon matPrefix>email</mat-icon>
+            </mat-form-field>
+          </div>
+
+          <div class="form-row">
+            <mat-form-field appearance="outline">
+              <mat-label>Téléphone</mat-label>
+              <input matInput formControlName="phone">
+              <mat-icon matPrefix>phone</mat-icon>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-label>Date de naissance</mat-label>
+              <input matInput type="date" formControlName="birthdate">
+              <mat-icon matPrefix>calendar_today</mat-icon>
+            </mat-form-field>
+          </div>
+
+          <div class="form-row">
+            <mat-form-field appearance="outline">
+              <mat-label>Spécialité</mat-label>
+              <input matInput formControlName="specialization">
+              <mat-icon matPrefix>school</mat-icon>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline">
+              <mat-label>Adresse</mat-label>
+              <input matInput formControlName="address">
+              <mat-icon matPrefix>location_on</mat-icon>
+            </mat-form-field>
+          </div>
+
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Biographie</mat-label>
+            <textarea matInput formControlName="bio" rows="4"
+                      placeholder="Parlez-nous de vous..."></textarea>
+            <mat-hint align="end">
+              {{ profileForm.get('bio')?.value?.length || 0 }}/500
+            </mat-hint>
+          </mat-form-field>
+
+          <div class="form-actions">
+            <button mat-raised-button class="primary-btn" type="submit"
+                    [disabled]="isLoading || profileForm.invalid">
+              <mat-icon>save</mat-icon>
+              Enregistrer les modifications
+            </button>
+          </div>
+
+        </form>
+
+      </div>
+
+    </mat-tab>
+
+
+    <!-- ===================== -->
+    <!-- SÉCURITÉ TAB -->
+    <!-- ===================== -->
+
+    <mat-tab label="Sécurité">
+
+      <div class="card-container">
+
+        <h2>Changer le mot de passe</h2>
+        <p class="subtitle">Assurez-vous d'utiliser un mot de passe fort et unique</p>
+
+        <form class="profile-form">
+
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Mot de passe actuel</mat-label>
+            <input matInput type="password">
+            <mat-icon matPrefix>lock</mat-icon>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Nouveau mot de passe</mat-label>
+            <input matInput type="password">
+            <mat-icon matPrefix>lock</mat-icon>
+            <mat-hint>
+              Minimum 8 caractères avec au moins une lettre majuscule, une minuscule et un chiffre
+            </mat-hint>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Confirmer le nouveau mot de passe</mat-label>
+            <input matInput type="password">
+            <mat-icon matPrefix>lock</mat-icon>
+          </mat-form-field>
+
+          <div class="security-box">
+            <h4>Conseils de sécurité :</h4>
+            <ul>
+              <li>Utilisez un mot de passe unique pour chaque compte</li>
+              <li>N'utilisez pas d'informations personnelles facilement devinables</li>
+              <li>Changez régulièrement votre mot de passe</li>
+              <li>Ne partagez jamais votre mot de passe</li>
+            </ul>
+          </div>
+
+          <div class="form-actions">
+            <button mat-raised-button class="primary-btn">
+              <mat-icon>lock</mat-icon>
+              Mettre à jour le mot de passe
+            </button>
+          </div>
+
+        </form>
+
+      </div>
+
+    </mat-tab>
+
+  </mat-tab-group>
+
+</div>

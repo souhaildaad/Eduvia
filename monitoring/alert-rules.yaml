@@ -1,0 +1,29 @@
+groups:
+  - name: eduvia.rules
+    rules:
+      - alert: EduViaBackendDown
+        expr: up{job="eduvia-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: EduVia backend is down
+          description: Prometheus cannot scrape the EduVia backend service.
+
+      - alert: EduViaFrontendDown
+        expr: up{job="eduvia-frontend"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: EduVia frontend is down
+          description: Prometheus cannot scrape the EduVia frontend service.
+
+      - alert: EduViaHighMemoryUsage
+        expr: container_memory_usage_bytes{namespace="eduvia"} > 500000000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High memory usage in EduVia namespace
+          description: A container in the EduVia namespace is using more than 500 MB.

@@ -1,0 +1,41 @@
+.floating-warning {
+  position: fixed;
+  top: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 80;
+  width: min(92vw, 760px);
+  min-height: 3.2rem;
+  padding: 1rem 1.2rem 1rem 1.35rem;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, #7f1d35 0%, #a61d31 52%, #d14a61 100%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff8fa;
+  box-shadow: 0 18px 40px rgba(127, 29, 53, 0.28);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-weight: 700;
+  backdrop-filter: blur(10px);
+}
+
+.floating-warning button {
+  min-width: 4rem;
+  min-height: 2.5rem;
+  padding: 0 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff1f5;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.floating-warning button:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 10px 22px rgba(62, 11, 24, 0.18);
+}

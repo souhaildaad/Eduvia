@@ -1,0 +1,127 @@
+<section class="statistics-page">
+  <article class="stats-hero">
+    <div class="stats-hero__copy">
+      <div class="hero-icon">
+        <mat-icon>bar_chart</mat-icon>
+      </div>
+      <div>
+        <h2>Supervision Globale de la Plateforme</h2>
+        <p>
+          Consultez les statistiques generales : taux d'engagement, progression moyenne et
+          satisfaction des etudiants.
+        </p>
+      </div>
+    </div>
+
+    <div class="menu-shell">
+      <button type="button" class="period-select" (click)="togglePeriodMenu()">
+        <span>{{ selectedPeriodLabel }}</span>
+        <mat-icon [class.rotated]="isPeriodMenuOpen">expand_more</mat-icon>
+      </button>
+
+      <div *ngIf="isPeriodMenuOpen" class="menu-panel menu-panel--period">
+        <button type="button" class="menu-option" (click)="selectPeriod('week')">Cette semaine</button>
+        <button type="button" class="menu-option" (click)="selectPeriod('month')">Ce mois</button>
+        <button type="button" class="menu-option" (click)="selectPeriod('year')">Cette annee</button>
+      </div>
+    </div>
+  </article>
+
+  <div class="metric-grid">
+    <article *ngFor="let metric of keyMetrics" class="metric-card">
+      <div class="metric-card__top">
+        <div class="metric-icon" [ngClass]="metric.color">
+          <mat-icon>{{ metric.icon }}</mat-icon>
+        </div>
+        <span class="metric-change">{{ metric.change }}</span>
+      </div>
+
+      <div class="metric-value">{{ metric.value }}</div>
+      <div class="metric-label">{{ metric.label }}</div>
+      <div class="metric-foot">
+        {{
+          selectedPeriod === 'week'
+            ? 'Moyenne de la semaine'
+            : selectedPeriod === 'month'
+              ? 'Moyenne du mois'
+              : "Moyenne de l'annee"
+        }}
+      </div>
+    </article>
+  </div>
+
+  <article class="chart-card">
+    <h3>Engagement Quotidien</h3>
+
+    <div class="line-chart">
+      <div class="chart-grid"></div>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="chart-line" aria-hidden="true">
+        <polyline points="0,43 16.6,35.8 33.3,31.7 50,34.2 66.6,30 83.3,70 100,80"></polyline>
+      </svg>
+      <div class="chart-points">
+        <div
+          *ngFor="let item of engagementData; let i = index"
+          class="chart-point"
+          [style.left.%]="(100 / (engagementData.length - 1)) * i"
+          [style.bottom.%]="(item.etudiants / 600) * 100">
+          <span>{{ item.name }}</span>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <article class="chart-card">
+    <div class="card-head">
+      <h3>Popularite des Cours</h3>
+      <span class="mini-pill">
+        <mat-icon>menu_book</mat-icon>
+        Top 5
+      </span>
+    </div>
+
+    <div class="popularity-list">
+      <div *ngFor="let course of coursePopularity" class="popularity-row">
+        <div class="popularity-meta">
+          <span>{{ course.name }}</span>
+          <div>
+            <span>{{ course.students }} etudiants</span>
+            <strong><mat-icon>star</mat-icon>{{ course.satisfaction }}</strong>
+          </div>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" [style.width.%]="(course.students / 200) * 100"></div>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <article class="chart-card">
+    <h3>Croissance Mensuelle des Utilisateurs</h3>
+
+    <div class="bar-chart">
+      <div *ngFor="let item of monthlyGrowth" class="bar-item">
+        <div class="bar-axis">
+          <div class="bar-column" [style.height.%]="(item.users / 600) * 100"></div>
+        </div>
+        <span>{{ item.month }}</span>
+      </div>
+    </div>
+  </article>
+
+  <article class="system-card">
+    <div class="system-title">
+      <mat-icon>monitor_heart</mat-icon>
+      <div>
+        <h3>Etat du Systeme</h3>
+        <p>Tous les services fonctionnent normalement</p>
+      </div>
+    </div>
+
+    <div class="status-list">
+      <div *ngFor="let service of systemHealth" class="status-item">
+        <span>{{ service.service }}</span>
+        <em>{{ service.status }}</em>
+      </div>
+    </div>
+  </article>
+</section>

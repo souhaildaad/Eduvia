@@ -1,0 +1,226 @@
+<div class="reminders-page">
+  <section class="intro-card">
+    <div class="intro-icon">
+      <mat-icon>notifications</mat-icon>
+    </div>
+    <div>
+      <h2>Envoi de Rappels avant les Examens</h2>
+      <p>
+        Envoyez des rappels cibles aux etudiants avant les examens.
+        Le systeme identifie automatiquement les etudiants n'ayant pas complete certains chapitres.
+      </p>
+    </div>
+  </section>
+
+  <section class="section-block">
+    <h3>Examens a venir</h3>
+
+    <div class="empty-state" *ngIf="loading">Chargement des rappels...</div>
+    <div class="empty-state empty-state--error" *ngIf="!loading && errorMessage">{{ errorMessage }}</div>
+    <div class="empty-state" *ngIf="!loading && !errorMessage && upcomingExams.length === 0">
+      Aucun rappel a envoyer. Tous les etudiants ont complete leurs cours concernes.
+    </div>
+
+    <div class="exam-list">
+      <article class="exam-card" *ngFor="let exam of upcomingExams">
+        <div class="exam-main">
+          <div class="exam-head">
+            <div class="exam-title-wrap">
+              <mat-icon class="calendar-icon">calendar_today</mat-icon>
+              <div>
+                <h4>{{ exam.course }}</h4>
+              </div>
+            </div>
+
+            <span class="sent-badge" *ngIf="exam.remindersSent > 0">
+              <mat-icon>check_circle</mat-icon>
+              {{ exam.remindersSent }} rappel(s) envoye(s)
+            </span>
+          </div>
+
+          <div class="exam-meta">
+            <div class="meta-row meta-row--chapters">
+              <span class="meta-label">Chapitres :</span>
+              <div class="chapter-list">
+                <span class="chapter-badge" *ngFor="let chapter of exam.chapters">{{ chapter }}</span>
+                <span class="chapter-badge chapter-badge--empty" *ngIf="exam.chapters.length === 0">Aucun chapitre</span>
+              </div>
+            </div>
+
+            <div class="meta-row">
+              <mat-icon>groups</mat-icon>
+              <span>{{ exam.studentsCount }} etudiants inscrits</span>
+            </div>
+          </div>
+
+          <div class="alert-box" *ngIf="isExamAtRisk(exam)">
+            <mat-icon>warning</mat-icon>
+            <span>{{ exam.studentsAtRisk.length }} etudiant(s) n'ont pas termine tous les chapitres</span>
+          </div>
+        </div>
+
+        <button type="button" class="primary-action" (click)="openReminderDialog(exam)">
+          <mat-icon>send</mat-icon>
+          Envoyer un rappel
+        </button>
+      </article>
+    </div>
+  </section>
+
+  <section class="history-card">
+    <h3>Historique des rappels</h3>
+
+    <div class="history-list">
+      <div class="empty-state" *ngIf="reminderHistory.length === 0">
+        Aucun rappel dans l'historique.
+      </div>
+
+      <article class="history-item" *ngFor="let item of reminderHistory; let i = index">
+        <div class="history-content">
+          <p>{{ item.title }}</p>
+          <span>{{ item.meta }}</span>
+        </div>
+        <div class="history-actions">
+          <button
+            type="button"
+            class="history-status history-status-button"
+            [class.history-status--unread]="item.status !== 'lu'"
+            (click)="toggleHistoryStatus(item)"
+          >
+            <mat-icon>{{ historyStatusIcon(item) }}</mat-icon>
+            {{ historyStatusLabel(item) }}
+          </button>
+          <button type="button" class="history-send-button" (click)="resendHistoryItem(item)">
+            <mat-icon>send</mat-icon>
+            Envoyer
+          </button>
+          <button type="button" class="history-delete-button" (click)="deleteHistoryItem(i)">
+            <mat-icon>delete</mat-icon>
+            Supprimer
+          </button>
+        </div>
+      </article>
+    </div>
+  </section>
+</div>
+
+<div class="dialog-backdrop" *ngIf="showDeleteHistoryDialog">
+  <div class="dialog-panel dialog-panel--compact">
+    <div class="dialog-header">
+      <h3>Supprimer ce rappel ?</h3>
+      <button type="button" class="close-button" (click)="closeDeleteHistoryDialog()" aria-label="Fermer">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+
+    <div class="dialog-body">
+      <section class="delete-confirm-card">
+        <mat-icon>delete</mat-icon>
+        <div>
+          <strong>{{ pendingDeleteHistoryItem()?.title || 'Rappel' }}</strong>
+          <p>{{ pendingDeleteHistoryItem()?.meta }}</p>
+        </div>
+      </section>
+      <p class="helper-text">Cette action supprime uniquement l'entree de l'historique de l'enseignant.</p>
+    </div>
+
+    <div class="dialog-actions">
+      <button type="button" class="secondary-action" (click)="closeDeleteHistoryDialog()">Annuler</button>
+      <button type="button" class="primary-action danger-action" (click)="confirmDeleteHistoryItem()">
+        <mat-icon>delete</mat-icon>
+        Supprimer
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="dialog-backdrop" *ngIf="showReminderDialog && selectedExam">
+  <div class="dialog-panel">
+    <div class="dialog-header">
+      <h3>Envoyer un rappel d'examen</h3>
+      <button type="button" class="close-button" (click)="closeReminderDialog()" aria-label="Fermer">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+
+    <div class="dialog-body">
+      <section class="selected-exam-card">
+        <div class="selected-exam-row">
+          <mat-icon>calendar_today</mat-icon>
+          <span><strong>{{ selectedExam.course }}</strong> - {{ selectedExam.date }}</span>
+        </div>
+        <p>{{ selectedExam.studentsCount }} etudiants inscrits</p>
+      </section>
+
+      <section class="locked-student-card" *ngIf="lockedReminderStudent">
+        <p>Etudiant selectionne</p>
+        <strong>{{ lockedReminderStudent.name }}</strong>
+        <span>{{ lockedReminderStudent.className }}</span>
+        <div class="chapter-list" *ngIf="lockedReminderTopics.length">
+          <span class="chapter-badge" *ngFor="let topic of lockedReminderTopics">{{ topic }}</span>
+        </div>
+      </section>
+
+      <section class="student-selection" *ngIf="!lockedReminderStudent && isExamAtRisk(selectedExam)">
+        <div class="selection-header">
+          <h4>
+            <mat-icon>warning</mat-icon>
+            Etudiants n'ayant pas complete tous les chapitres
+          </h4>
+          <button type="button" class="secondary-action" (click)="toggleAllStudents()">
+            {{ allStudentsSelected() ? 'Tout deselectionner' : 'Tout selectionner' }}
+          </button>
+        </div>
+
+        <div class="student-list">
+          <label class="student-row" *ngFor="let student of selectedExam.studentsAtRisk">
+            <input
+              type="checkbox"
+              [checked]="isStudentSelected(student.id)"
+              (change)="toggleStudent(student.id)"
+            />
+            <div>
+              <strong>{{ student.name }}</strong>
+              <p>{{ reminderProgressLabel(student) }} - Manquants : {{ student.missingChapters.join(', ') }}</p>
+            </div>
+          </label>
+        </div>
+
+        <p class="selection-count">{{ selectedStudents.length }} etudiant(s) selectionne(s)</p>
+      </section>
+
+      <label class="send-all-row" *ngIf="!lockedReminderStudent">
+        <input
+          type="checkbox"
+          [checked]="selectedStudents.length === 0"
+          (change)="sendToAllChanged($any($event.target).checked)"
+        />
+        <span>Envoyer a tous les etudiants concernes ({{ studentsToRemindCount(selectedExam) }})</span>
+      </label>
+
+      <section class="message-block">
+        <label for="reminderMessage">Message du rappel</label>
+        <textarea
+          id="reminderMessage"
+          [(ngModel)]="reminderMessage"
+          rows="10"
+          placeholder="Ecrivez votre message..."
+        ></textarea>
+        <p class="helper-text">Vous pouvez personnaliser ce message selon vos besoins.</p>
+      </section>
+
+      <section class="preview-card">
+        <p class="preview-label">Apercu du message :</p>
+        <div class="preview-message">{{ reminderMessage }}</div>
+      </section>
+    </div>
+
+    <div class="dialog-actions">
+      <button type="button" class="secondary-action" (click)="closeReminderDialog()">Annuler</button>
+      <button type="button" class="primary-action" [disabled]="!reminderMessage.trim()" (click)="confirmReminder()">
+        <mat-icon>send</mat-icon>
+        Envoyer le rappel
+      </button>
+    </div>
+  </div>
+</div>

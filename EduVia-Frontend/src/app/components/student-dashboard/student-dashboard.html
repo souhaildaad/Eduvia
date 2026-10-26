@@ -1,0 +1,1818 @@
+<app-ai-assessment
+  *ngIf="levelRetakeOpen"
+  [studentName]="studentProfile.name"
+  (completed)="onLevelRetakeCompleted($event)"
+></app-ai-assessment>
+<button
+  *ngIf="levelRetakeOpen"
+  type="button"
+  class="level-retake-close"
+  (click)="levelRetakeOpen = false"
+  aria-label="Fermer le test de niveau"
+>
+  X
+</button>
+
+<div class="student-shell" *ngIf="!levelRetakeOpen">
+  <header class="student-header">
+    <div class="brand-block">
+      <div class="logo-wrapper">
+        <img src="logo.png" alt="Eduvia logo" class="dashboard-logo">
+      </div>
+      <div class="title-wrapper">
+        <h1>Espace Etudiant</h1>
+        <p class="student-name">EduVia - Learn smart. Think EduVia.</p>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <div class="user-chip" aria-label="Utilisateur connecte">
+        <div class="user-chip__avatar">
+          <img *ngIf="studentProfile.avatarDataUrl" [src]="studentProfile.avatarDataUrl" alt="Photo profil" />
+          <span *ngIf="!studentProfile.avatarDataUrl">{{ studentInitials }}</span>
+        </div>
+        <div class="user-chip__meta">
+          <strong>{{ studentProfile.name }}</strong>
+          <span>Etudiant</span>
+        </div>
+      </div>
+
+      <span class="user-chip__class user-chip__class--standalone" [class.user-chip__class--empty]="!studentProfile.className">
+        {{ studentClassLabel }}
+      </span>
+
+      <app-notification-bell></app-notification-bell>
+
+      <button mat-stroked-button class="logout-button" (click)="onLogout()">
+        <mat-icon>logout</mat-icon>
+        Deconnexion
+      </button>
+    </div>
+  </header>
+
+  <nav class="student-tabs">
+    <button
+      *ngFor="let tab of tabs"
+      type="button"
+      class="student-tab"
+      [class.active]="activeTab === tab.id"
+      (click)="setActiveTab(tab.id)"
+    >
+      {{ tab.label }}
+    </button>
+  </nav>
+
+  <section *ngIf="activeTab === 'parcours'" class="student-content">
+    <div *ngIf="loading && filteredCourseCatalog.length === 0" class="embedded-section">Chargement des contenus...</div>
+    <div *ngIf="error" class="embedded-section">{{ error }}</div>
+
+    <ng-container *ngIf="!selectedCourse; else selectedCourseView">
+      <section class="catalog-hero">
+        <div class="catalog-hero__icon">
+          <mat-icon>school</mat-icon>
+        </div>
+        <div class="catalog-hero__copy">
+          <h2>Mes Cours Disponibles</h2>
+          <p>Choisissez un cours pour commencer votre apprentissage</p>
+        </div>
+        <span class="catalog-level-chip">Niveau {{ studentProfile.levelLabel }}</span>
+      </section>
+
+      <section class="catalog-toolbar">
+        <div class="catalog-search">
+          <mat-icon>search</mat-icon>
+          <input
+            type="text"
+            [(ngModel)]="searchTerm"
+            (input)="onSearchInput($any($event.target).value)"
+            placeholder="Rechercher un cours..."
+          />
+        </div>
+
+      </section>
+
+      <section class="catalog-section">
+        <div class="catalog-section__header">
+          <h2>Tous les cours</h2>
+          <span>{{ filteredCourseCatalog.length }} cours disponibles</span>
+        </div>
+
+        <div class="catalog-grid" *ngIf="filteredCourseCatalog.length > 0; else emptyCourses">
+          <article class="course-card" *ngFor="let course of filteredCourseCatalog">
+            <div class="course-card__cover" [style.background]="course.coverStyle">
+              <span class="course-card__accent" [style.background]="course.accent"></span>
+            </div>
+
+            <div class="course-card__body">
+              <div class="course-card__title-row">
+                <h3>{{ course.title }}</h3>
+                <span class="course-pill" [class]="courseLevelClass(studentProfile.levelLabel)">{{ studentProfile.levelLabel }}</span>
+              </div>
+
+              <p class="course-card__description">{{ course.description }}</p>
+
+              <div class="course-card__meta">
+                <span><mat-icon>groups</mat-icon>{{ course.students }} etudiants</span>
+                <span><mat-icon>star</mat-icon>{{ course.rating }}</span>
+              </div>
+
+              <div class="course-card__progress">
+                <div class="course-card__progress-head">
+                  <strong>{{ course.progressLabel }}</strong>
+                  <span>{{ course.progress }}%</span>
+                </div>
+                <div class="course-card__progress-bar">
+                  <span class="course-card__progress-fill" [style.width.%]="course.progress"></span>
+                </div>
+              </div>
+
+              <div class="course-card__footer">
+                <div class="course-teacher">
+                  <span class="course-teacher__avatar">
+                    <img *ngIf="course.teacherAvatarDataUrl" [src]="course.teacherAvatarDataUrl" alt="Photo de l'enseignant" />
+                    <span *ngIf="!course.teacherAvatarDataUrl">{{ teacherInitials(course.teacher) }}</span>
+                  </span>
+                  <span class="course-teacher__name">{{ course.teacher }}</span>
+                </div>
+
+                <button type="button" class="action-button action-button--compact" (click)="openCourse(course)">
+                  Continuer
+                </button>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <ng-template #emptyCourses>
+          <div class="embedded-section">Aucun cours disponible pour le moment.</div>
+        </ng-template>
+      </section>
+    </ng-container>
+
+    <ng-template #selectedCourseView>
+      <section *ngIf="selectedCourse as course" class="course-view">
+        <div class="course-view__hero" [style.background]="course.coverStyle">
+          <span class="course-view__accent" [style.background]="course.accent"></span>
+          <div class="course-view__overlay">
+            <button type="button" class="course-view__back" (click)="closeSelectedCourse()">
+              <mat-icon>arrow_back</mat-icon>
+              Retour aux cours
+            </button>
+
+            <div class="course-view__title-row">
+              <div>
+                <h2>{{ course.title }}</h2>
+                <p class="course-view__description">
+                  Explorez uniquement les documents, videos et quiz de ce cours.
+                </p>
+              </div>
+
+              <span class="course-pill" [class]="courseLevelClass(studentProfile.levelLabel)">{{ studentProfile.levelLabel }}</span>
+            </div>
+
+            <div class="course-view__meta">
+              <span><mat-icon>menu_book</mat-icon>{{ course.chapters }} chapitres</span>
+              <span><mat-icon>groups</mat-icon>{{ course.students }} etudiants</span>
+              <span class="course-view__teacher">
+                <span class="course-view__teacher-avatar">
+                  <img *ngIf="course.teacherAvatarDataUrl" [src]="course.teacherAvatarDataUrl" alt="Photo du professeur" />
+                  <mat-icon *ngIf="!course.teacherAvatarDataUrl">person_outline</mat-icon>
+                </span>
+                {{ course.teacher }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="course-view__content">
+          <ng-container *ngIf="selectedStandaloneQuizId; else selectedCourseResourcesView">
+            <div class="course-view__section-head">
+              <h3>Quiz du cours</h3>
+            </div>
+
+            <app-course-quiz
+              [studentLevel]="studentLevel"
+              [standalone]="true"
+              [selectedQuizId]="selectedStandaloneQuizId"
+              [standaloneQuizData]="selectedStandaloneQuiz"
+              (closed)="closeStandaloneQuiz()"
+              (quizSubmitted)="onQuizSubmitted($event)"
+            ></app-course-quiz>
+          </ng-container>
+
+          <ng-template #selectedCourseResourcesView>
+          <div class="course-view__section-head">
+            <div class="course-view__section-copy">
+              <h3>Contenus du cours</h3>
+              <p *ngIf="course.progressLabel" class="course-view__progress-label">
+                {{ course.progressLabel }}
+              </p>
+            </div>
+
+            <div class="course-view__section-progress">
+              <span>{{ selectedCourseResources.length }} ressource(s)</span>
+              <div class="course-view__progress-bar">
+                <span class="course-view__progress-fill" [style.width.%]="course.progress"></span>
+              </div>
+            </div>
+          </div>
+
+          <ng-container *ngIf="selectedCourseResourceChapters.length > 0; else emptyCourseResources">
+            <details *ngFor="let chapter of selectedCourseResourceChapters" class="course-resource-chapter" open>
+              <summary class="course-resource-chapter__head">
+                <h4>{{ chapter.title }}</h4>
+                <mat-icon>expand_more</mat-icon>
+              </summary>
+
+              <details *ngFor="let part of chapter.parts" class="course-resource-part" open>
+                <summary class="course-resource-part__head">
+                  <h5>{{ part.title }}</h5>
+                  <mat-icon>expand_more</mat-icon>
+                </summary>
+
+                <details *ngFor="let folder of part.folders" class="course-resource-folder" open>
+                  <summary class="course-resource-folder__head">
+                    <div class="course-resource-folder__title">
+                      <mat-icon>{{ folder.icon }}</mat-icon>
+                      <h6>{{ folder.title }}</h6>
+                    </div>
+                    <span>{{ folder.items.length }} contenu(s)</span>
+                    <mat-icon class="course-resource-folder__chevron">expand_more</mat-icon>
+                  </summary>
+
+                  <article *ngFor="let item of folder.items" class="recommendation-card">
+                    <div class="recommendation-card__leading">
+                      <button
+                        type="button"
+                        class="completion-check"
+                        [class.completion-check--done]="item.isCompleted"
+                        [class.completion-check--locked]="item.isLocked"
+                        [disabled]="item.type === 'Quiz' || item.completionButtonDisabled"
+                        [attr.aria-label]="item.isCompleted ? 'Element termine' : 'Marquer comme termine'"
+                        (click)="markContentCompleted(item)"
+                      >
+                        <mat-icon>{{ item.isCompleted ? 'check_circle' : 'radio_button_unchecked' }}</mat-icon>
+                      </button>
+
+                      <div class="recommendation-card__icon">
+                        <mat-icon>{{ item.icon }}</mat-icon>
+                      </div>
+                    </div>
+
+                    <div class="recommendation-card__body">
+                      <h3>{{ item.title }}</h3>
+
+                      <div class="recommendation-meta">
+                        <span class="badge" [class]="'badge--' + recommendationTypeClass(item.type)">{{ item.type }}</span>
+                        <span class="badge badge--level">{{ item.level }}</span>
+                        <span class="meta-time" *ngIf="item.type === 'Quiz'">
+                          <mat-icon>repeat</mat-icon>
+                          {{ item.quizAttempts || 1 }} tentative(s)
+                        </span>
+                        <span class="meta-time" *ngIf="item.type === 'Quiz'">
+                          <mat-icon>timer</mat-icon>
+                          {{ recommendationQuizDurationLabel(item) }}
+                        </span>
+                        <span class="meta-time" *ngIf="item.type === 'Quiz' && recommendationDueDateLabel(item) as dueDateLabel">
+                          <mat-icon>event</mat-icon>
+                          {{ dueDateLabel }}
+                        </span>
+                      </div>
+
+                      <div class="quiz-result-inline" *ngIf="quizResultSummary(item) as summary">
+                        <span class="quiz-result-inline__score">Score: {{ summary.score ?? 0 }}%</span>
+                        <span
+                          class="quiz-result-inline__status"
+                          [class.quiz-result-inline__status--pass]="summary.passed"
+                          [class.quiz-result-inline__status--fail]="summary.passed === false"
+                        >
+                          {{ summary.passed ? 'Quiz reussi' : 'Quiz non reussi' }}
+                        </span>
+                      </div>
+
+                      <p class="recommendation-reason">
+                        <mat-icon>topic</mat-icon>
+                        {{ item.reason }}
+                      </p>
+                    </div>
+
+                    <div class="recommendation-card__actions">
+                      <button
+                        type="button"
+                        class="action-button"
+                        [disabled]="recommendationActionDisabled(item)"
+                        (click)="startRecommendation(item)"
+                      >
+                        {{ recommendationActionLabel(item) }}
+                      </button>
+                    </div>
+                  </article>
+                </details>
+              </details>
+            </details>
+          </ng-container>
+
+          <ng-template #emptyCourseResources>
+            <div class="embedded-section">Aucun contenu visible pour ce cours a votre niveau.</div>
+          </ng-template>
+          </ng-template>
+        </div>
+      </section>
+    </ng-template>
+  </section>
+
+  <section *ngIf="activeTab === 'planificateur'" class="planner-shell planner-shell--split">
+    <div class="planner-switch">
+      <button type="button" [class.active]="plannerSection === 'calendar'" (click)="setPlannerSection('calendar')">
+        <mat-icon>calendar_today</mat-icon>
+        Calendrier
+      </button>
+      <button type="button" [class.active]="plannerSection === 'tasks'" (click)="setPlannerSection('tasks')">
+        <mat-icon>check_circle</mat-icon>
+        To-Do List
+      </button>
+    </div>
+
+    <ng-container *ngIf="plannerSection === 'calendar'; else plannerTasksView">
+      <div class="planner-calendar-layout">
+        <section class="planner-mini-calendar">
+          <div class="planner-month-head">
+            <button type="button" class="icon-button" (click)="movePlannerPeriod(-1)" aria-label="Mois precedent">
+              <mat-icon>chevron_left</mat-icon>
+            </button>
+            <strong>{{ plannerCurrentLabel }}</strong>
+            <button type="button" class="icon-button" (click)="movePlannerPeriod(1)" aria-label="Mois suivant">
+              <mat-icon>chevron_right</mat-icon>
+            </button>
+          </div>
+
+          <div class="planner-view-toggle planner-view-toggle--compact">
+            <button type="button" [class.active]="plannerViewMode === 'day'" (click)="setPlannerView('day')">Jour</button>
+            <button type="button" [class.active]="plannerViewMode === 'week'" (click)="setPlannerView('week')">Semaine</button>
+            <button type="button" [class.active]="plannerViewMode === 'month'" (click)="setPlannerView('month')">Mois</button>
+          </div>
+
+          <div class="planner-calendar planner-calendar--compact" *ngIf="plannerViewMode === 'month'">
+            <span class="planner-weekday">lu</span>
+            <span class="planner-weekday">ma</span>
+            <span class="planner-weekday">me</span>
+            <span class="planner-weekday">je</span>
+            <span class="planner-weekday">ve</span>
+
+            <button
+              type="button"
+              *ngFor="let day of plannerBusinessMonthDays()"
+              class="planner-day planner-day--compact"
+              [class.planner-day--muted]="!day.isCurrentMonth"
+              [class.planner-day--today]="day.isToday"
+              [class.planner-day--selected]="day.date === plannerSelectedDate"
+              [class.planner-day--disabled]="day.isPast"
+              [disabled]="day.isPast"
+              (click)="selectPlannerDate(day)"
+            >
+              <span>{{ day.dayNumber }}</span>
+              <i *ngIf="day.events.length"></i>
+            </button>
+          </div>
+
+          <div class="planner-week planner-week--compact" *ngIf="plannerViewMode === 'week'">
+            <button
+              type="button"
+              *ngFor="let day of plannerBusinessWeekDays()"
+              class="planner-week-day"
+              [class.planner-week-day--selected]="day.date === plannerSelectedDate"
+              [class.planner-day--disabled]="day.isPast"
+              [disabled]="day.isPast"
+              (click)="selectPlannerDate(day)"
+            >
+              <strong>{{ formatPlannerDate(day.date) }}</strong>
+              <span>{{ day.events.length }} evt</span>
+            </button>
+          </div>
+
+          <div class="planner-single-day" *ngIf="plannerViewMode === 'day'">
+            <h3>{{ formatPlannerDate(plannerDayView().date) }}</h3>
+            <p>{{ plannerDayView().events.length }} evenement(s)</p>
+          </div>
+        </section>
+
+        <section class="planner-events-board">
+          <div class="planner-board-head">
+            <h2>Evenements a venir</h2>
+            <button type="button" class="planner-primary-button" (click)="openPlannerEventDialog()">
+              <mat-icon>add</mat-icon>
+              Ajouter un evenement
+            </button>
+          </div>
+
+          <div class="planner-event-list">
+            <article *ngFor="let event of plannerVisibleEvents" class="planner-event-card">
+              <div class="planner-event-card__content">
+                <h3>{{ event.title }}</h3>
+                <p>{{ event.notes || 'Aucune note ajoutee' }}</p>
+                <div class="planner-event-card__meta">
+                  <span>{{ formatPlannerDate(event.date) }}</span>
+                  <span>{{ event.time }}</span>
+                </div>
+              </div>
+              <span *ngIf="event.reminded || event.reminderEnabled" class="planner-reminder-status">
+                {{ event.reminded ? 'Rappele' : 'Alerte active' }}
+              </span>
+              <button
+                type="button"
+                class="planner-reminder-button"
+                [class.planner-reminder-button--active]="event.reminded || event.reminderEnabled"
+                [disabled]="event.reminded || plannerReminderSendingId === event.id"
+                (click)="remindPlannerEvent(event)"
+                [attr.aria-label]="event.reminded ? 'Rappel deja envoye' : event.reminderEnabled ? 'Desactiver alerte' : 'Activer alerte'">
+                <mat-icon>{{ event.reminded || event.reminderEnabled ? 'notifications_active' : 'notifications_none' }}</mat-icon>
+              </button>
+              <button type="button" class="icon-button" (click)="editPlannerEvent(event)"><mat-icon>edit</mat-icon></button>
+              <button type="button" class="icon-button icon-button--danger" (click)="requestPlannerDelete('event', event.id, event.title)"><mat-icon>delete</mat-icon></button>
+            </article>
+            <p *ngIf="plannerVisibleEvents.length === 0" class="planner-empty">Aucun evenement pour ce jour.</p>
+          </div>
+        </section>
+      </div>
+    </ng-container>
+
+    <ng-template #plannerTasksView>
+      <section class="planner-task-board">
+        <div class="planner-board-head">
+          <h2>Mes Taches</h2>
+          <button type="button" class="planner-primary-button" (click)="openPlannerTaskDialog()">
+            <mat-icon>add</mat-icon>
+            Nouvelle tache
+          </button>
+        </div>
+
+        <div class="planner-task-controls">
+          <div class="planner-view-toggle">
+            <button type="button" [class.active]="plannerTaskListScope === 'day'" (click)="setPlannerTaskListScope('day')">Jour</button>
+            <button type="button" [class.active]="plannerTaskListScope === 'week'" (click)="setPlannerTaskListScope('week')">Semaine</button>
+          </div>
+        </div>
+
+        <div class="planner-task-list">
+          <article
+            *ngFor="let task of plannerVisibleTasks"
+            class="planner-task-row"
+            [class.planner-task-row--done]="task.completed"
+            [class.planner-task-row--expired]="isPlannerTaskExpired(task)">
+            <input
+              type="checkbox"
+              [checked]="task.completed"
+              [disabled]="isPlannerTaskExpired(task)"
+              (change)="togglePlannerTask(task)" />
+            <div class="planner-task-row__content">
+              <div>
+                <strong>{{ task.title }}</strong>
+                <span>{{ formatPlannerDate(task.date) }}</span>
+              </div>
+              <p *ngIf="task.notes" class="planner-task-note">{{ task.notes }}</p>
+            </div>
+            <button type="button" class="icon-button" (click)="editPlannerTask(task)"><mat-icon>edit</mat-icon></button>
+            <button type="button" class="icon-button icon-button--danger" (click)="requestPlannerDelete('task', task.id, task.title)"><mat-icon>delete</mat-icon></button>
+          </article>
+
+          <p *ngIf="plannerVisibleTasks.length === 0" class="planner-empty">Aucune tache pour cette vue.</p>
+        </div>
+      </section>
+    </ng-template>
+  </section>
+
+  <section *ngIf="activeTab === 'recommendation'" class="embedded-section recommendation-panel-tab">
+    <ng-container *ngIf="recommendationAnalysis as analysis; else recommendationEmpty">
+      <article class="smart-rec-hero">
+        <div class="smart-rec-hero__copy">
+          <span class="smart-rec-kicker">ANALYSE INTELLIGENTE</span>
+          <h2>Recommandations basees sur vos acquis faibles</h2>
+          <p>Recommandations mises a jour a partir de vos derniers quiz.</p>
+          <div class="smart-rec-hero__meta">
+            <span><mat-icon>fact_check</mat-icon>{{ analysis.summary.lastQuizTitle || 'Dernier quiz' }} - {{ analysis.summary.lastScore }}%</span>
+            <span *ngIf="analysis.summary.lastSubmittedAt"><mat-icon>schedule</mat-icon>{{ analysis.summary.lastSubmittedAt | date:'dd/MM/yyyy HH:mm:ss' }}</span>
+            <span><mat-icon>auto_awesome</mat-icon>Mise a jour {{ analysis.summary.updatedAt | date:'dd/MM/yyyy HH:mm:ss' }}</span>
+          </div>
+        </div>
+
+        <div class="smart-rec-stats">
+          <div class="smart-rec-stat">
+            <strong>{{ analysis.summary.attemptsAnalyzed }}</strong>
+            <span>quiz analyse(s)</span>
+          </div>
+          <div class="smart-rec-stat">
+            <strong>{{ analysis.summary.averageScore }}%</strong>
+            <span>moyenne recente</span>
+          </div>
+          <div class="smart-rec-stat">
+            <strong>{{ analysis.summary.weakAcquisCount }}</strong>
+            <span>acquis faible(s)</span>
+          </div>
+          <div class="smart-rec-stat">
+            <strong>{{ analysis.summary.recommendationCount }}</strong>
+            <span>ressource(s) ciblee(s)</span>
+          </div>
+        </div>
+      </article>
+
+      <div class="smart-rec-section-head">
+        <h3>Acquis faibles detectes</h3>
+        <span>{{ analysis.weakAcquis.length }} notion(s)</span>
+      </div>
+
+      <div class="weak-acquis-grid" *ngIf="analysis.weakAcquis.length > 0; else recommendationEmpty">
+        <article class="weak-acquis-card" *ngFor="let weak of analysis.weakAcquis">
+          <div class="weak-acquis-card__top">
+            <span class="weak-priority">{{ weak.severityLabel }}</span>
+            <strong>{{ weak.severity }}%</strong>
+          </div>
+          <h4>{{ weak.label }}</h4>
+          <p>{{ weak.reason }}</p>
+          <div class="weak-acquis-card__meta">
+            <span *ngIf="weak.courseId"><mat-icon>menu_book</mat-icon>{{ weak.courseId }}</span>
+            <span *ngIf="weak.chapterId"><mat-icon>folder</mat-icon>{{ weak.chapterId }}</span>
+            <span><mat-icon>help</mat-icon>{{ weak.incorrectQuestions }}/{{ weak.totalQuestions }}</span>
+          </div>
+          <div class="weak-progress"><span [style.width.%]="weak.severity"></span></div>
+          <div class="weak-keywords">
+            <span *ngFor="let keyword of weak.keywords">{{ keyword }}</span>
+          </div>
+        </article>
+      </div>
+
+      <div class="smart-rec-section-head smart-rec-section-head--spaced">
+        <h3>Contenus recommandes</h3>
+        <span>{{ recommendations.length }} ressource(s)</span>
+      </div>
+
+      <div class="targeted-rec-list">
+        <article *ngFor="let item of recommendations" class="recommendation-card targeted-rec-card">
+          <div class="recommendation-card__leading">
+            <div class="recommendation-card__icon">
+              <mat-icon>{{ item.icon }}</mat-icon>
+            </div>
+          </div>
+
+          <div class="recommendation-card__body">
+            <h3>{{ item.title }}</h3>
+            <div class="recommendation-meta">
+              <span class="badge" [class]="'badge--' + recommendationTypeClass(item.type)">{{ item.type }}</span>
+              <span class="badge badge--ai" *ngIf="item.recommendationScore">Quiz IA recommande</span>
+              <span class="badge badge--level">{{ item.level }}</span>
+              <span class="meta-time" *ngIf="item.type === 'Quiz'">
+                <mat-icon>repeat</mat-icon>{{ item.quizAttempts || 1 }} tentative(s)
+              </span>
+              <span class="meta-time" *ngIf="item.type === 'Quiz'">
+                <mat-icon>timer</mat-icon>{{ recommendationQuizDurationLabel(item) }}
+              </span>
+              <span class="meta-time" *ngIf="item.type === 'Quiz' && recommendationDueDateLabel(item) as dueDateLabel">
+                <mat-icon>event</mat-icon>{{ dueDateLabel }}
+              </span>
+            </div>
+            <div class="weak-keywords targeted-rec-keywords" *ngIf="item.focusKeywords?.length">
+              <span *ngFor="let keyword of item.focusKeywords">{{ keyword }}</span>
+            </div>
+            <p class="recommendation-reason">
+              <mat-icon>topic</mat-icon>
+              {{ item.reason }}
+            </p>
+          </div>
+
+          <div class="recommendation-card__actions">
+            <button
+              type="button"
+              class="action-button"
+              [disabled]="recommendationActionDisabled(item)"
+              (click)="startRecommendation(item)"
+            >
+              {{ recommendationActionLabel(item) }}
+            </button>
+          </div>
+        </article>
+      </div>
+    </ng-container>
+
+    <ng-template #recommendationEmpty>
+      <div class="embedded-section embedded-section--empty">
+        <h2>Aucune analyse disponible</h2>
+        <p>Terminez au moins un quiz pour generer des recommandations de cours et de quiz ciblees.</p>
+      </div>
+    </ng-template>
+  </section>
+
+  <section *ngIf="activeTab === 'portfolio'" class="portfolio-shell">
+    <header class="portfolio-hero">
+      <div>
+        <span>Student Portfolio</span>
+        <h2>Portfolio intelligent de {{ studentProfile.name }}</h2>
+      </div>
+      <button type="button" class="portfolio-primary" (click)="retakeLevelTest()">
+        <mat-icon>restart_alt</mat-icon>
+        Refaire le test de niveau
+      </button>
+    </header>
+
+    <div class="portfolio-metrics">
+      <article>
+        <mat-icon>query_stats</mat-icon>
+        <span>Score moyen</span>
+        <strong>{{ portfolioAverageScore }}%</strong>
+        <small>{{ portfolioQuizTraceCount }} quiz traces</small>
+      </article>
+      <article>
+        <mat-icon>trending_up</mat-icon>
+        <span>Progression</span>
+        <strong>{{ dashboardProgressPercent }}%</strong>
+        <small>Parcours et quiz combines</small>
+      </article>
+      <article>
+        <mat-icon>verified</mat-icon>
+        <span>Cours completes</span>
+        <strong>{{ portfolioCompletedCourses }}/{{ courseCatalog.length }}</strong>
+        <small>Selon quiz et activite</small>
+      </article>
+      <article>
+        <mat-icon>school</mat-icon>
+        <span>Niveau actuel</span>
+        <strong>{{ studentProfile.levelLabel }}</strong>
+        <small>Mis a jour par le test</small>
+      </article>
+    </div>
+
+    <section class="portfolio-panel">
+      <div class="portfolio-panel__head">
+        <div>
+          <span>Historique des cours</span>
+          <h3>Cours suivis</h3>
+        </div>
+        <small>{{ portfolioCompletedCourses }} / {{ courseCatalog.length }} completes</small>
+      </div>
+
+      <article class="portfolio-course-row" *ngFor="let course of courseCatalog">
+        <div>
+          <h4>{{ course.title }}</h4>
+          <p>{{ course.teacher }} - {{ portfolioCourseResourceCount(course.id) }} ressource(s)</p>
+        </div>
+        <div class="portfolio-course-progress">
+          <span>{{ course.progress >= 100 ? 'Complete' : course.progress > 0 ? 'En cours' : 'Non commence' }}</span>
+          <div><i [style.width.%]="course.progress"></i></div>
+          <small>{{ course.progressLabel }}</small>
+        </div>
+        <button type="button" class="portfolio-soft-button" (click)="openPortfolioCourseSummary(course)">Voir resume</button>
+      </article>
+    </section>
+
+    <div class="portfolio-grid">
+      <section class="portfolio-panel">
+        <div class="portfolio-panel__head">
+          <div>
+            <span>Historique des quiz</span>
+            <h3>Scores et dates</h3>
+          </div>
+          <small>{{ portfolioEvaluationCount }} evaluation(s)</small>
+        </div>
+        <article class="portfolio-quiz-row">
+          <div>
+            <h4>Test de niveau initial</h4>
+            <p>{{ portfolioInitialAssessmentLabel }}</p>
+            <strong *ngIf="portfolioWeaknesses.length">A revoir: {{ portfolioWeakLabels }}</strong>
+          </div>
+          <span>{{ portfolioAverageScore }}%</span>
+        </article>
+      </section>
+
+      <section class="portfolio-panel">
+        <div class="portfolio-panel__head">
+          <div>
+            <span>Evolution dans le temps</span>
+            <h3>Progression des scores</h3>
+          </div>
+          <mat-icon>show_chart</mat-icon>
+        </div>
+        <div class="portfolio-score-line">
+          <span>Test de niveau initial</span>
+          <div><i [style.width.%]="portfolioAverageScore"></i></div>
+          <strong>{{ portfolioAverageScore }}%</strong>
+        </div>
+      </section>
+    </div>
+
+    <div class="portfolio-grid portfolio-grid--three">
+      <section class="portfolio-panel">
+        <h3><mat-icon>auto_awesome</mat-icon>Forces detectees</h3>
+        <ul><li *ngFor="let strength of portfolioStrengths">{{ strength }}</li></ul>
+      </section>
+      <section class="portfolio-panel">
+        <h3><mat-icon>track_changes</mat-icon>Faiblesses a traiter</h3>
+        <ul><li *ngFor="let weak of portfolioWeaknesses">{{ weak }}</li></ul>
+      </section>
+      <section class="portfolio-panel">
+        <h3><mat-icon>psychology</mat-icon>Recommandations IA</h3>
+        <ul>
+          <li *ngFor="let recommendation of portfolioRecommendations">{{ recommendation }}</li>
+        </ul>
+      </section>
+    </div>
+
+    <section class="portfolio-panel portfolio-remediation">
+      <div class="portfolio-panel__head">
+        <div>
+          <span>Remediation intelligente</span>
+          <h3>Quiz cibles sur vos acquis faibles</h3>
+        </div>
+        <button type="button" class="portfolio-primary" (click)="openRemediationCenter()">
+          <mat-icon>auto_awesome</mat-icon>
+          Ouvrir le centre IA
+        </button>
+      </div>
+      <div class="portfolio-remediation-grid">
+        <article *ngFor="let weak of portfolioWeakCards.slice(0, 4)">
+          <span>{{ weak.courseId || 'Test de niveau initial' }}</span>
+          <strong>{{ weak.successRate }}%</strong>
+          <h4>Renforcer l'acquis {{ weak.label }}</h4>
+          <p>Acquis faibles detectes: <b>{{ weak.label }}</b></p>
+          <small>Derniere tentative: {{ weak.reason }}</small>
+          <button type="button" class="portfolio-soft-button" (click)="startPortfolioRemediationQuiz(weak)">
+            {{ remediationQuizLoadingKey === (weak.key || weak.label) ? 'Generation...' : 'Faire le quiz' }}
+          </button>
+        </article>
+      </div>
+    </section>
+  </section>
+
+  <section *ngIf="activeTab === 'communaute'" class="embedded-section">
+    <app-student-forum></app-student-forum>
+  </section>
+
+  <section *ngIf="activeTab === 'clubs'" class="embedded-section">
+    <app-club-suggestions></app-club-suggestions>
+  </section>
+
+  <section *ngIf="activeTab === 'assistant'" class="embedded-section assistant-panel">
+    <app-chatbot presentation="avatar"></app-chatbot>
+  </section>
+
+  <section *ngIf="activeTab === 'meet'" class="meet-shell">
+    <header class="meet-head">
+      <div class="meet-head__copy">
+        <mat-icon>forum</mat-icon>
+        <div>
+          <h2>Salles de Reunion</h2>
+          <p>Rejoins une salle pour etudier ensemble.</p>
+        </div>
+      </div>
+      <button type="button" class="meet-create-button" (click)="openStudentMeetDialog()">
+        <mat-icon>group_add</mat-icon>
+        Creer une salle
+      </button>
+    </header>
+
+    <nav class="meet-tabs">
+      <button type="button" [class.active]="meetView === 'students'" (click)="meetView = 'students'">
+        <mat-icon>groups</mat-icon>
+        Entre Etudiants
+      </button>
+      <button type="button" [class.active]="meetView === 'teachers'" (click)="meetView = 'teachers'">
+        <mat-icon>videocam</mat-icon>
+        Avec Professeurs
+      </button>
+      <button type="button" [class.active]="meetView === 'replays'" (click)="meetView = 'replays'">
+        <mat-icon>movie</mat-icon>
+        Replays
+      </button>
+    </nav>
+
+    <section class="meet-modal-backdrop" *ngIf="meetCreateDialogOpen" (click)="closeStudentMeetDialog()">
+      <div class="meet-modal" (click)="$event.stopPropagation()">
+        <header class="meet-modal__header">
+          <h3>Creer une salle</h3>
+          <button type="button" class="meet-modal__close" [disabled]="meetCreating" (click)="closeStudentMeetDialog()" aria-label="Fermer">
+            <mat-icon>close</mat-icon>
+          </button>
+        </header>
+
+        <label class="meet-field">
+          <span>Titre de la salle *</span>
+          <div class="meet-field-control">
+            <input type="text" [(ngModel)]="meetForm.title" placeholder="Ex: Revision Algorithmique" />
+            <button type="button" class="meet-field-voice" (click)="announceMeetField('title')" aria-label="Lire le champ titre de la salle">
+              <mat-icon>{{ isMeetFieldVoiceActive('title') ? 'volume_up' : 'volume_off' }}</mat-icon>
+            </button>
+          </div>
+        </label>
+
+        <label class="meet-field">
+          <span>Sujet / Description *</span>
+          <div class="meet-field-control">
+            <input type="text" [(ngModel)]="meetForm.topic" placeholder="Ex: Revision chapitre 3" />
+            <button type="button" class="meet-field-voice" (click)="announceMeetField('topic')" aria-label="Lire le champ sujet de la salle">
+              <mat-icon>{{ isMeetFieldVoiceActive('topic') ? 'volume_up' : 'volume_off' }}</mat-icon>
+            </button>
+          </div>
+        </label>
+
+        <footer class="meet-modal__footer">
+          <button type="button" class="meet-modal-button meet-modal-button--ghost" [disabled]="meetCreating" (click)="closeStudentMeetDialog()">Annuler</button>
+          <button type="button" class="meet-modal-button" [disabled]="!isMeetFormValid || meetCreating" (click)="createStudentMeetRoom()">
+            <span class="meet-spinner" *ngIf="meetCreating" aria-hidden="true"></span>
+            {{ meetCreating ? 'Creation...' : 'Creer et ouvrir' }}
+          </button>
+        </footer>
+      </div>
+    </section>
+
+    <p class="meet-error" *ngIf="meetError">{{ meetError }}</p>
+    <div *ngIf="meetLoading" class="embedded-section">Chargement des salles meet...</div>
+
+    <section class="meet-frame-backdrop" *ngIf="meetFrameOpen" (click)="closeMeetFrame()">
+      <div class="meet-frame" (click)="$event.stopPropagation()">
+        <header class="meet-frame__header">
+          <h3>{{ meetFrameTitle }}</h3>
+          <button type="button" class="meet-modal__close" (click)="closeMeetFrame()" aria-label="Fermer">
+            <mat-icon>close</mat-icon>
+          </button>
+        </header>
+        <iframe *ngIf="meetFrameUrl" [src]="meetFrameUrl" allow="camera; microphone; fullscreen; display-capture; autoplay"></iframe>
+        <div class="meet-recording-player" *ngIf="!meetFrameUrl && meetFrameReplay">
+          <video controls preload="metadata" *ngIf="isPlayableReplayUrl(meetFrameReplay.replayUrl)">
+            <source [src]="meetFrameReplay.replayUrl" />
+          </video>
+          <div class="meet-recording-player__empty" *ngIf="!isPlayableReplayUrl(meetFrameReplay.replayUrl)">
+            <mat-icon>movie</mat-icon>
+            <h4>Enregistrement en preparation</h4>
+            <p>{{ meetFrameReplay.replaySubject || meetFrameReplay.topic || 'Replay de la session terminee.' }}</p>
+            <span>{{ meetFrameReplay.replayDuration || 'Video en cours de preparation' }}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="meet-grid" *ngIf="!meetLoading && meetView === 'students'">
+      <article class="meet-info">
+        <mat-icon>groups</mat-icon>
+        <div>
+          <h3>Entre etudiants</h3>
+          <p>Rejoins une salle de meet entre les etudiants</p>
+        </div>
+      </article>
+      <article class="meet-card" *ngFor="let session of studentMeetSessions">
+        <button type="button" class="meet-interface-delete" (click)="requestMeetInterfaceDelete(session)" aria-label="Supprimer cette salle de mon interface">
+          <mat-icon>delete</mat-icon>
+        </button>
+        <div class="meet-card__title">
+          <mat-icon class="meet-card-icon">videocam</mat-icon>
+          <h3>{{ session.title }}</h3>
+        </div>
+        <p>Heberge par {{ meetHostLabel(session, 'Etudiant') }}</p>
+        <p><mat-icon>menu_book</mat-icon>{{ session.topic || 'Discussion et revision' }}</p>
+        <div class="meet-meta">
+          <span><mat-icon>groups</mat-icon>{{ session.participants }}/{{ session.capacity }}</span>
+        </div>
+        <div class="meet-actions">
+          <button type="button" class="meet-join" (click)="joinMeet(session)">Rejoindre</button>
+          <button type="button" class="meet-copy" (click)="endMeet(session)" *ngIf="canModerateMeet(session)" aria-label="Fermer definitivement la salle">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+      </article>
+    </section>
+
+    <section class="meet-grid" *ngIf="!meetLoading && meetView === 'teachers'">
+      <article class="meet-info">
+        <mat-icon>videocam</mat-icon>
+        <div>
+          <h3>Avec professeurs</h3>
+          <p>Rejoins une salle de meet avec les professeurs</p>
+        </div>
+      </article>
+      <article class="meet-card meet-card--teacher" *ngFor="let session of teacherMeetSessions">
+        <button type="button" class="meet-interface-delete" (click)="requestMeetInterfaceDelete(session)" aria-label="Supprimer cette salle de mon interface">
+          <mat-icon>delete</mat-icon>
+        </button>
+        <div class="meet-card__title">
+          <mat-icon class="meet-card-icon">videocam</mat-icon>
+          <h3>{{ session.title }}</h3>
+        </div>
+        <p class="meet-teacher">{{ meetHostLabel(session, 'Professeur') }}</p>
+        <p><mat-icon>menu_book</mat-icon>{{ session.topic || 'Session live' }}</p>
+        <div class="meet-meta">
+          <span><mat-icon>groups</mat-icon>{{ session.participants }}/{{ session.capacity }}</span>
+        </div>
+        <button type="button" class="meet-join meet-join--teacher" (click)="joinMeet(session)">Rejoindre</button>
+      </article>
+    </section>
+
+    <section class="meet-grid meet-grid--replays" *ngIf="!meetLoading && meetView === 'replays'">
+      <article class="meet-info">
+        <mat-icon>movie</mat-icon>
+        <div>
+          <h3>Replays</h3>
+          <p>Consulter les enregistrements des meets</p>
+        </div>
+      </article>
+      <nav class="meet-replay-filter">
+        <button type="button" [class.active]="meetReplayFilter === 'student'" (click)="meetReplayFilter = 'student'">
+          Entre Etudiants
+        </button>
+        <button type="button" [class.active]="meetReplayFilter === 'teacher'" (click)="meetReplayFilter = 'teacher'">
+          Entre Prof
+        </button>
+      </nav>
+      <article class="meet-card meet-replay" *ngFor="let replay of filteredMeetReplays">
+        <button type="button" class="meet-interface-delete meet-interface-delete--replay" (click)="requestMeetInterfaceDelete(replay)" aria-label="Supprimer ce replay de mon interface">
+          <mat-icon>delete</mat-icon>
+        </button>
+        <div class="meet-replay__thumb">
+          <mat-icon>play_circle</mat-icon>
+          <span>{{ replay.replayDuration || 'Replay' }}</span>
+        </div>
+        <h3><mat-icon class="meet-card-icon">videocam</mat-icon>{{ replay.replayTitle || replay.title }}</h3>
+        <p>{{ replay.hostName || 'Enseignant' }}</p>
+        <p>{{ replay.replaySubject || replay.topic }}</p>
+        <button type="button" class="meet-join" (click)="joinMeet(replay)">Voir le replay</button>
+      </article>
+    </section>
+
+    <section class="meet-confirm-backdrop" *ngIf="pendingMeetInterfaceDelete" (click)="cancelMeetInterfaceDelete()">
+      <div class="meet-confirm-panel" (click)="$event.stopPropagation()">
+        <div class="meet-confirm-icon">
+          <mat-icon>delete</mat-icon>
+        </div>
+        <div class="meet-confirm-copy">
+          <h3>Supprimer de l'interface</h3>
+          <p>Voulez-vous vraiment supprimer {{ pendingMeetInterfaceDelete.title }} de votre interface ?</p>
+          <div class="meet-confirm-actions">
+            <button type="button" class="meet-confirm-button meet-confirm-button--ghost" (click)="cancelMeetInterfaceDelete()">Annuler</button>
+            <button type="button" class="meet-confirm-button" (click)="confirmMeetInterfaceDelete()">Supprimer</button>
+          </div>
+        </div>
+        <button type="button" class="meet-confirm-close" (click)="cancelMeetInterfaceDelete()" aria-label="Fermer">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+    </section>
+  </section>
+
+  <section *ngIf="activeTab === 'flashcards'" class="embedded-section flashcards-panel">
+    <ng-container *ngIf="!flashcardSessionActive; else flashcardSessionView">
+      <div class="flashcards-head catalog-hero">
+        <div class="catalog-hero__icon">
+          <mat-icon>style</mat-icon>
+        </div>
+        <div class="catalog-hero__copy">
+          <h2>Flashcards de Revision</h2>
+          <p>Revise rapidement et efficacement avec les flashcards.</p>
+        </div>
+      </div>
+
+      <div class="flashcards-stats">
+        <article>
+          <mat-icon>menu_book</mat-icon>
+          <strong>10</strong>
+          <span>Cartes etudiees</span>
+        </article>
+        <article>
+          <mat-icon>timer</mat-icon>
+          <strong>{{ flashcardSetupTimerLabel }}</strong>
+          <span>Temps de revision</span>
+        </article>
+        <article>
+          <mat-icon>emoji_events</mat-icon>
+          <strong>{{ flashcardScorePercent }}%</strong>
+          <span>Score moyen</span>
+        </article>
+      </div>
+
+      <div class="flashcards-setup">
+        <div class="flashcards-setup__icon">🎬</div>
+        <h3>Choisis une matiere</h3>
+        <div class="flashcard-select" style="position:relative" [class.open]="flashcardSubjectDropdownOpen" (click)="$event.stopPropagation()">
+          <button type="button" class="flashcard-select__button" style="display:flex;align-items:center;justify-content:space-between;width:100%;height:48px;padding:0 1rem;border:1px solid #dbe4ef;border-radius:.9rem;background:#fff;font:inherit" (click)="toggleFlashcardSubjectDropdown($event)">
+            <span>{{ flashcardSubjectLabel }}</span>
+            <mat-icon>{{ flashcardSubjectDropdownOpen ? 'keyboard_arrow_up' : 'keyboard_arrow_down' }}</mat-icon>
+          </button>
+          <div class="flashcard-select__menu" style="position:absolute;z-index:20;top:calc(100% + .55rem);left:0;width:290px;padding:.7rem 0;border:1px solid #e5e7eb;border-radius:0 1rem 1rem 0;background:#fff" *ngIf="flashcardSubjectDropdownOpen">
+            <button
+              type="button"
+              *ngFor="let subject of flashcardSubjectOptions"
+              [class.active]="flashcardSubject === subject.id"
+              style="display:block;width:100%;padding:.75rem 1rem;border:0;background:#fff;text-align:left;font:inherit"
+              (click)="selectFlashcardSubject(subject.id, $event)"
+            >
+              {{ subject.label }}
+            </button>
+          </div>
+        </div>
+
+        <h3>Niveau des questions</h3>
+        <div class="flashcard-select" style="position:relative" [class.open]="flashcardDifficultyDropdownOpen" (click)="$event.stopPropagation()">
+          <button type="button" class="flashcard-select__button" style="display:flex;align-items:center;justify-content:space-between;width:100%;height:48px;padding:0 1rem;border:1px solid #dbe4ef;border-radius:.9rem;background:#fff;font:inherit" (click)="toggleFlashcardDifficultyDropdown($event)">
+            <span>{{ flashcardDifficultyLabel }}</span>
+            <mat-icon>{{ flashcardDifficultyDropdownOpen ? 'keyboard_arrow_up' : 'keyboard_arrow_down' }}</mat-icon>
+          </button>
+          <div class="flashcard-select__menu" style="position:absolute;z-index:20;top:calc(100% + .55rem);left:0;width:290px;padding:.7rem 0;border:1px solid #e5e7eb;border-radius:0 1rem 1rem 0;background:#fff" *ngIf="flashcardDifficultyDropdownOpen">
+            <button type="button" style="display:block;width:100%;padding:.75rem 1rem;border:0;background:#fff;text-align:left;font:inherit" [class.active]="flashcardDifficulty === 'facile'" (click)="selectFlashcardDifficulty('facile', $event)">Facile</button>
+            <button type="button" style="display:block;width:100%;padding:.75rem 1rem;border:0;background:#fff;text-align:left;font:inherit" [class.active]="flashcardDifficulty === 'intermediaire'" (click)="selectFlashcardDifficulty('intermediaire', $event)">Intermediaire</button>
+            <button type="button" style="display:block;width:100%;padding:.75rem 1rem;border:0;background:#fff;text-align:left;font:inherit" [class.active]="flashcardDifficulty === 'difficile'" (click)="selectFlashcardDifficulty('difficile', $event)">Difficile</button>
+          </div>
+        </div>
+
+        <p class="planner-warning" *ngIf="flashcardError">{{ flashcardError }}</p>
+
+        <button type="button" class="flashcards-start" (click)="startFlashcardSession()" [disabled]="flashcardLoading">
+          <mat-icon>{{ flashcardLoading ? 'hourglass_empty' : 'play_arrow' }}</mat-icon>
+          {{ flashcardLoading ? 'Generation...' : 'Commencer la session' }}
+        </button>
+      </div>
+    </ng-container>
+
+    <ng-template #flashcardSessionView>
+      <div class="flashcard-session-head catalog-hero">
+        <div class="catalog-hero__icon">
+          <mat-icon>style</mat-icon>
+        </div>
+        <div class="catalog-hero__copy">
+          <h2>Session de Revision</h2>
+          <p>{{ flashcardSubjectLabel }}</p>
+        </div>
+        <div class="flashcard-session-actions">
+          <span style="display:inline-flex;align-items:center;gap:.25rem"><mat-icon>schedule</mat-icon>{{ flashcardTimerLabel }}</span>
+          <button type="button" (click)="finishFlashcardSession()"><mat-icon>pause</mat-icon>Terminer</button>
+        </div>
+      </div>
+
+      <div class="flashcard-progress">
+        <div>
+          <span>Progression</span>
+          <strong>{{ flashcardReviewedCount }}/{{ flashcards.length }} cartes</strong>
+        </div>
+        <div class="flashcard-progress__bar">
+          <span [style.width.%]="flashcardProgressPercent"></span>
+        </div>
+      </div>
+
+      <div class="flashcard-scoreline">
+        <span><mat-icon>check_circle</mat-icon>{{ flashcardCorrectCount }} correctes</span>
+        <span><mat-icon>cancel</mat-icon>{{ flashcardReviewedCount - flashcardCorrectCount }} a revoir</span>
+        <strong>Carte {{ currentFlashcardIndex + 1 }} / {{ flashcards.length }}</strong>
+      </div>
+
+      <article
+        class="flashcard-card"
+        *ngIf="currentFlashcard as card"
+        [class.flashcard-card--revealed]="card.revealed"
+        [class.flashcard-card--correct]="card.revealed && card.correct"
+        [class.flashcard-card--wrong]="card.revealed && !card.correct"
+      >
+        <div class="flashcard-card__badges">
+          <span>{{ flashcardDifficulty }}</span>
+          <span>{{ card.subject }}</span>
+        </div>
+        <h3>{{ card.revealed ? 'Reponse' : 'Question' }}</h3>
+        <button
+          type="button"
+          class="flashcard-voice-button"
+          *ngIf="!card.revealed"
+          [class.flashcard-voice-button--active]="flashcardVoiceEnabled && isFlashcardVoiceActive()"
+          [class.flashcard-voice-button--muted]="!flashcardVoiceEnabled"
+          (click)="toggleFlashcardVoice()"
+          aria-label="Activer ou desactiver la lecture de la question"
+        >
+          <mat-icon>{{ flashcardVoiceEnabled ? 'volume_up' : 'volume_off' }}</mat-icon>
+        </button>
+        <p>{{ card.revealed ? card.answer : card.question }}</p>
+        <textarea
+          *ngIf="!card.revealed"
+          [(ngModel)]="flashcardUserAnswer"
+          placeholder="Entrez votre reponse..."
+        ></textarea>
+        <button type="button" class="flashcard-flip" *ngIf="!card.revealed" (click)="revealFlashcardAnswer()">
+          <mat-icon>sync</mat-icon>
+          Voir la reponse
+        </button>
+        <p class="flashcard-result" *ngIf="card.revealed">
+          Votre reponse: {{ card.userAnswer }} - {{ card.correct ? 'Correcte' : 'A revoir' }}
+        </p>
+      </article>
+
+      <p class="planner-warning" *ngIf="flashcardError">{{ flashcardError }}</p>
+
+      <div class="flashcard-nav">
+        <button type="button" (click)="previousFlashcard()" [disabled]="currentFlashcardIndex === 0">
+          <mat-icon>arrow_back</mat-icon>
+          Precedente
+        </button>
+        <button type="button" (click)="nextFlashcard()">
+          {{ currentFlashcardIndex >= flashcards.length - 1 ? 'Terminer' : 'Suivante' }}
+          <mat-icon>arrow_forward</mat-icon>
+        </button>
+      </div>
+    </ng-template>
+  </section>
+
+  <section *ngIf="activeTab === 'classement'" class="leaderboard-shell">
+    <section class="catalog-hero leaderboard-hero">
+      <div class="catalog-hero__icon">
+        <mat-icon>emoji_events</mat-icon>
+      </div>
+      <div class="catalog-hero__copy">
+        <h2>Classement</h2>
+        <p>Classement de la semaine</p>
+      </div>
+    </section>
+
+    <div class="leaderboard-head">
+      <div class="leaderboard-position">
+        <mat-icon>emoji_events</mat-icon>
+        <span>Ta position</span>
+        <strong>{{ currentLeaderboardPosition }}</strong>
+      </div>
+    </div>
+
+    <div class="leaderboard-filters">
+      <button
+        type="button"
+        *ngFor="let level of leaderboardLevels"
+        [class.active]="leaderboardFilter === level.id"
+        (click)="setLeaderboardFilter(level.id)"
+      >
+        {{ level.label }}
+      </button>
+    </div>
+
+    <div *ngIf="leaderboardLoading" class="embedded-section">Chargement du classement...</div>
+    <div *ngIf="leaderboardError" class="embedded-section">{{ leaderboardError }}</div>
+
+    <ng-container *ngIf="!leaderboardLoading && !leaderboardError && leaderboard">
+      <section class="leaderboard-podium">
+        <h3><mat-icon>emoji_events</mat-icon> Top 3 de la semaine</h3>
+
+        <div class="leaderboard-podium__grid">
+          <article
+            class="leaderboard-podium-card"
+            *ngFor="let student of filteredLeaderboardTopStudents; let index = index"
+            [class.leaderboard-podium-card--gold]="index === 0"
+          >
+            <div class="leaderboard-medal">
+              <mat-icon>{{ index === 0 ? 'workspace_premium' : index === 1 ? 'military_tech' : 'emoji_events' }}</mat-icon>
+            </div>
+            <div class="leaderboard-avatar">
+              <img *ngIf="student.avatarDataUrl" [src]="student.avatarDataUrl" alt="Photo etudiant" />
+              <span *ngIf="!student.avatarDataUrl">{{ leaderboardAvatarFallback(student) }}</span>
+            </div>
+            <h4>{{ student.name }}</h4>
+            <span class="leaderboard-level" [class]="leaderboardLevelClass(student.levelKey)">{{ student.level }}</span>
+            <dl>
+              <div><dt>Points</dt><dd>{{ student.points }}</dd></div>
+              <div><dt>Cours</dt><dd>{{ student.courses }}</dd></div>
+              <div><dt>Moyenne</dt><dd>{{ student.average }}%</dd></div>
+            </dl>
+          </article>
+        </div>
+      </section>
+
+      <section class="leaderboard-list">
+        <h3>Classement Complet</h3>
+        <article
+          class="leaderboard-row"
+          *ngFor="let student of filteredLeaderboardStudents"
+          [class.leaderboard-row--me]="student.isCurrentStudent"
+        >
+          <div class="leaderboard-row__identity">
+            <div class="leaderboard-avatar leaderboard-avatar--small">
+              <img *ngIf="student.avatarDataUrl" [src]="student.avatarDataUrl" alt="Photo etudiant" />
+              <span *ngIf="!student.avatarDataUrl">{{ leaderboardAvatarFallback(student) }}</span>
+            </div>
+            <div>
+              <strong>#{{ student.rank }} {{ student.name }}</strong>
+              <span *ngIf="student.isCurrentStudent" class="leaderboard-me">C'est toi !</span>
+              <p>
+                <span class="leaderboard-level" [class]="leaderboardLevelClass(student.levelKey)">{{ student.level }}</span>
+                {{ student.className || studentProfile.className }}
+              </p>
+            </div>
+          </div>
+
+          <div class="leaderboard-row__stats">
+            <strong>{{ student.points }}</strong>
+            <span>points</span>
+          </div>
+        </article>
+      </section>
+
+      <section class="leaderboard-encouragement" *ngIf="leaderboard.encouragement">
+        <mat-icon>trending_up</mat-icon>
+        <div>
+          <h3>Continue tes efforts !</h3>
+        </div>
+      </section>
+    </ng-container>
+  </section>
+
+  <section *ngIf="activeTab === 'stages'" class="internships-shell" (click)="closeInternshipDomainDropdown()">
+    <header class="internships-head catalog-hero">
+      <div class="catalog-hero__icon">
+        <mat-icon>business_center</mat-icon>
+      </div>
+      <div class="catalog-hero__copy">
+        <h2>Stages & Opportunites</h2>
+        <p>Decouvre les offres de stage ajoutees par l'administration</p>
+      </div>
+    </header>
+
+    <section class="internships-toolbar">
+      <div class="internships-search">
+        <mat-icon>search</mat-icon>
+        <input
+          type="text"
+          [(ngModel)]="internshipSearchTerm"
+          placeholder="Rechercher par nom de stage..."
+        />
+        <button
+          type="button"
+          class="internships-search__clear"
+          *ngIf="internshipSearchTerm"
+          (click)="clearInternshipSearch()"
+          aria-label="Vider la recherche"
+        >
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+      <div class="internships-filter" [class.open]="internshipDomainDropdownOpen" (click)="$event.stopPropagation()">
+        <mat-icon>filter_list</mat-icon>
+        <button type="button" class="internships-filter__button" (click)="toggleInternshipDomainDropdown($event)">
+          <span>{{ internshipDomainFilter }}</span>
+          <mat-icon>{{ internshipDomainDropdownOpen ? 'keyboard_arrow_up' : 'keyboard_arrow_down' }}</mat-icon>
+        </button>
+        <div class="internships-filter__menu" *ngIf="internshipDomainDropdownOpen">
+          <button
+            type="button"
+            *ngFor="let domain of internshipDomains"
+            [class.active]="internshipDomainFilter === domain"
+            (click)="selectInternshipDomain(domain)"
+          >
+            {{ domain }}
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <div *ngIf="internshipsLoading" class="embedded-section">Chargement des stages...</div>
+    <div *ngIf="internshipsError" class="embedded-section">{{ internshipsError }}</div>
+
+    <section class="internship-grid" *ngIf="!internshipsLoading && !internshipsError">
+      <article class="internship-card" *ngFor="let internship of filteredInternships">
+        <div class="internship-card__top">
+          <span class="internship-icon"><mat-icon>business_center</mat-icon></span>
+          <span class="internship-domain internship-domain--top">{{ internship.domain }}</span>
+        </div>
+        <h3>{{ internship.title }}</h3>
+        <p><mat-icon>apartment</mat-icon>{{ internship.company }}</p>
+        <p><mat-icon>location_on</mat-icon>{{ internship.city }}</p>
+        <p><mat-icon>calendar_month</mat-icon>{{ internship.duration }}</p>
+        <button type="button" (click)="openInternshipDetails(internship)">Voir plus</button>
+      </article>
+    </section>
+
+    <div class="internship-modal" *ngIf="selectedInternship">
+      <article class="internship-modal__card">
+        <button type="button" class="internship-modal__close" (click)="closeInternshipDetails()" aria-label="Fermer">
+          <mat-icon>close</mat-icon>
+        </button>
+
+        <header class="internship-modal__head">
+          <span class="internship-icon"><mat-icon>business_center</mat-icon></span>
+          <div>
+            <h2>{{ selectedInternship.title }}</h2>
+            <p>{{ selectedInternship.company }}</p>
+          </div>
+        </header>
+
+        <div class="internship-modal__chips">
+          <span>{{ selectedInternship.domain }}</span>
+          <span><mat-icon>calendar_month</mat-icon>{{ selectedInternship.duration }}</span>
+        </div>
+
+        <section class="internship-detail internship-detail--description">
+          <h3><mat-icon>notes</mat-icon>Description</h3>
+          <p>{{ selectedInternship.description }}</p>
+        </section>
+
+        <section class="internship-detail">
+          <h3><mat-icon>star_border</mat-icon>Competences demandees</h3>
+          <ul>
+            <li *ngFor="let skill of selectedInternship.skills">{{ skill }}</li>
+          </ul>
+        </section>
+
+        <section class="internship-detail">
+          <h3><mat-icon>location_on</mat-icon>Localisation</h3>
+          <p>{{ selectedInternship.address || selectedInternship.city }}</p>
+          <iframe
+            *ngIf="selectedInternshipMapUrl"
+            class="internship-map"
+            [src]="selectedInternshipMapUrl"
+            loading="lazy"
+            referrerpolicy="no-referrer-when-downgrade"
+          ></iframe>
+        </section>
+
+        <section class="internship-detail internship-detail--contact">
+          <h3><mat-icon>phone</mat-icon>Contact</h3>
+          <p><mat-icon>mail</mat-icon>{{ selectedInternship.email }}</p>
+          <p><mat-icon>call</mat-icon>{{ selectedInternship.phone }}</p>
+          <p *ngIf="selectedInternship.website"><mat-icon>open_in_new</mat-icon>{{ selectedInternship.website }}</p>
+        </section>
+
+        <footer class="internship-modal__footer">
+          <span class="internship-deadline">Date limite : {{ selectedInternship.deadline }}</span>
+          <button type="button" class="cancel-button" (click)="closeInternshipDetails()">Annuler</button>
+          <button type="button" class="contact-button" (click)="contactInternship(selectedInternship)">
+            <mat-icon>mail</mat-icon>
+            Contacter
+          </button>
+        </footer>
+      </article>
+    </div>
+  </section>
+
+  <div class="planner-celebration flashcard-result-modal" *ngIf="flashcardResultDialog.visible">
+    <div class="planner-celebration__burst flashcard-result-modal__card">
+      <button type="button" class="planner-modal-close" (click)="closeFlashcardResultDialog()" aria-label="Fermer">
+        <mat-icon>close</mat-icon>
+      </button>
+      <mat-icon>emoji_events</mat-icon>
+      <span class="flashcard-result-modal__badge">{{ flashcardResultDialog.badge }}</span>
+      <h2>Score : {{ flashcardResultDialog.score }}%</h2>
+      <p>{{ flashcardResultDialog.correct }}/{{ flashcardResultDialog.total }} reponses correctes. Continue comme ca, chaque carte te rapproche du niveau suivant.</p>
+    </div>
+  </div>
+
+  <div class="planner-celebration course-completion-modal" *ngIf="courseCompletionDialog.visible">
+    <div class="planner-celebration__burst course-completion-modal__card">
+      <button type="button" class="planner-modal-close" (click)="closeCourseCompletionDialog()" aria-label="Fermer">
+        <mat-icon>close</mat-icon>
+      </button>
+      <mat-icon>emoji_events</mat-icon>
+      <span class="flashcard-result-modal__badge">Badge Courage</span>
+      <h2>Excellent travail !</h2>
+      <p>{{ courseCompletionDialog.courseTitle }} est termine a 100%.</p>
+      <div class="course-completion-stats">
+        <article>
+          <strong>{{ courseCompletionDialog.chaptersCompleted }}</strong>
+          <span>chapitres completes</span>
+        </article>
+        <article>
+          <strong>{{ courseCompletionDialog.quizzesPassed }}</strong>
+          <span>quiz reussis</span>
+        </article>
+        <article>
+          <strong>{{ courseCompletionDialog.averageScore }}%</strong>
+          <span>note moyenne</span>
+        </article>
+      </div>
+    </div>
+  </div>
+
+  <section *ngIf="activeTab === 'parametres'" class="embedded-section">
+    <app-teacher-profile-settings></app-teacher-profile-settings>
+  </section>
+
+  <div class="portfolio-modal-backdrop" *ngIf="portfolioSummaryOpen" (click)="closePortfolioCourseSummary()">
+    <section class="portfolio-summary-modal" (click)="$event.stopPropagation()">
+      <button type="button" class="portfolio-modal-close" (click)="closePortfolioCourseSummary()" aria-label="Fermer">X</button>
+      <div *ngIf="portfolioSummaryLoading" class="embedded-section">Generation du resume...</div>
+      <div *ngIf="portfolioSummaryError" class="embedded-section">{{ portfolioSummaryError }}</div>
+      <ng-container *ngIf="portfolioSummary as summary">
+        <header class="portfolio-summary-head">
+          <div>
+            <span>Resume IA du cours</span>
+            <h2>{{ summary.courseTitle }}</h2>
+            <p>Fiche structuree generee a partir des fichiers publies dans ce cours.</p>
+          </div>
+        <div class="portfolio-summary-tags">
+            <span>{{ summary.resourceCount }} document(s)</span>
+          <span>{{ summary.quizCount }} quiz</span>
+          <span>{{ summary.teacherName }}</span>
+        </div>
+        </header>
+        <section class="summary-card">
+          <h3>Vue d'ensemble du cours</h3>
+          <p>{{ summary.overview }}</p>
+        </section>
+        <section class="summary-card summary-card--accent">
+          <span>Synthese rapide</span>
+          <h3>Tableau des notions importantes</h3>
+          <table>
+            <thead><tr><th>Notion</th><th>Explication claire</th><th>Pourquoi c'est important</th><th>Exemple / usage</th></tr></thead>
+            <tbody>
+              <tr *ngFor="let notion of summary.notions">
+                <td>{{ notion.notion }}</td>
+                <td>{{ notion.explanation }}</td>
+                <td>{{ notion.importance }}</td>
+                <td>{{ notion.example }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+        <section class="summary-card">
+          <span>Resume detaille</span>
+          <h3>Explication par partie du cours</h3>
+          <div class="summary-detail-grid">
+            <article *ngFor="let detail of summary.details">
+              <h4>{{ detail.title }}</h4>
+              <p>{{ detail.explanation }}</p>
+              <ul><li *ngFor="let bullet of detail.bullets">{{ bullet }}</li></ul>
+            </article>
+          </div>
+        </section>
+        <section class="summary-card">
+          <h3>Prochaines actions conseillees</h3>
+          <p *ngFor="let action of summary.nextActions">{{ action }}</p>
+        </section>
+        <div class="summary-two-cols">
+          <section class="summary-card">
+            <span>Revision</span>
+            <h3>Plan de travail conseille</h3>
+            <ol><li *ngFor="let step of summary.revisionPlan">{{ step.text }}</li></ol>
+          </section>
+          <section class="summary-card">
+            <span>Memo</span>
+            <h3>Glossaire express</h3>
+            <p *ngFor="let item of summary.glossary">{{ item }}</p>
+          </section>
+        </div>
+        <footer class="summary-download-row">
+          <button type="button" class="portfolio-primary" (click)="downloadPortfolioSummaryPdf()">
+            <mat-icon>picture_as_pdf</mat-icon>
+            Telecharger le resume PDF
+          </button>
+        </footer>
+      </ng-container>
+    </section>
+  </div>
+
+  <div class="portfolio-modal-backdrop" *ngIf="remediationCenterOpen" (click)="closeRemediationCenter()">
+    <section
+      class="portfolio-summary-modal portfolio-remediation-modal"
+      [class.portfolio-remediation-modal--quiz]="remediationDirectQuizOpen || selectedStandaloneQuizId"
+      (click)="$event.stopPropagation()"
+    >
+      <button type="button" class="portfolio-modal-close" (click)="closeRemediationCenter()" aria-label="Fermer">X</button>
+      <header class="portfolio-summary-head">
+        <div>
+          <span>Centre de remediation IA</span>
+          <h2>{{ selectedStandaloneQuiz?.title || 'Quiz cibles sur vos resultats faibles' }}</h2>
+          <p>
+            {{
+              remediationDirectQuizOpen
+                ? 'Votre quiz cible est genere puis ouvert directement ici.'
+                : 'Selectionnez un point faible pour lancer un quiz de 10 questions base sur le contenu reel du cours.'
+            }}
+          </p>
+        </div>
+      </header>
+      <ng-container *ngIf="remediationDirectQuizOpen; else remediationListView">
+        <ng-container *ngIf="selectedStandaloneQuizId && selectedStandaloneQuiz; else remediationQuizLoading">
+          <ng-container *ngTemplateOutlet="remediationQuizView"></ng-container>
+        </ng-container>
+      </ng-container>
+      <ng-template #remediationListView>
+        <article class="remediation-list-row" *ngFor="let weak of portfolioWeakCards">
+          <div>
+            <span>{{ weak.courseId || 'Test de niveau initial' }}</span>
+            <h3>Renforcer l'acquis {{ weak.label }}</h3>
+            <p>{{ weak.chapterId || weak.label }}</p>
+            <small>Dernier score faible: {{ weak.successRate }}%</small>
+          </div>
+          <button type="button" class="portfolio-primary" (click)="startPortfolioRemediationQuiz(weak)">
+            <mat-icon>quiz</mat-icon>
+            {{ remediationQuizLoadingKey === (weak.key || weak.label) ? 'Generation...' : 'Faire le quiz' }}
+          </button>
+        </article>
+      </ng-template>
+      <ng-template #remediationQuizLoading>
+        <div class="remediation-quiz-loading">
+          <mat-icon>auto_awesome</mat-icon>
+          <strong>Generation du quiz...</strong>
+          <span>Le quiz s'ouvrira automatiquement dans cette popup.</span>
+        </div>
+      </ng-template>
+      <ng-template #remediationQuizView>
+        <div class="remediation-quiz-view">
+          <app-course-quiz
+            [studentLevel]="studentLevel"
+            [standalone]="true"
+            [selectedQuizId]="selectedStandaloneQuizId"
+            [standaloneQuizData]="selectedStandaloneQuiz"
+            (closed)="closeStandaloneQuiz()"
+            (quizSubmitted)="onQuizSubmitted($event)"
+          ></app-course-quiz>
+        </div>
+      </ng-template>
+    </section>
+  </div>
+
+  <div
+    *ngIf="selectedStandaloneQuizId && selectedStandaloneQuiz && activeTab === 'recommendation'"
+    class="recommendation-quiz-overlay"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="recommendation-quiz-title"
+    (click)="closeStandaloneQuiz()"
+  >
+    <section class="recommendation-quiz-modal" (click)="$event.stopPropagation()">
+      <div class="recommendation-quiz-modal__header">
+        <div>
+          <p class="preview-path">Quiz recommande</p>
+          <h2 id="recommendation-quiz-title">{{ selectedStandaloneQuiz.title }}</h2>
+        </div>
+
+        <button type="button" class="preview-close" (click)="closeStandaloneQuiz()" aria-label="Fermer le quiz">
+          X
+        </button>
+      </div>
+
+      <div class="recommendation-quiz-modal__body">
+        <app-course-quiz
+          [studentLevel]="studentLevel"
+          [standalone]="true"
+          [selectedQuizId]="selectedStandaloneQuizId"
+          [standaloneQuizData]="selectedStandaloneQuiz"
+          (closed)="closeStandaloneQuiz()"
+          (quizSubmitted)="onQuizSubmitted($event)"
+        ></app-course-quiz>
+      </div>
+    </section>
+  </div>
+
+  <div class="floating-chatbot" [class.floating-chatbot--open]="chatbotPopupOpen">
+    <section class="floating-chatbot__panel" *ngIf="chatbotPopupOpen">
+      <div class="floating-chatbot__head">
+        <div>
+          <strong>Chatbot EduVia</strong>
+          <span>Base: IA</span>
+        </div>
+        <button type="button" (click)="toggleChatbotPopup()" aria-label="Fermer le chatbot">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+      <app-chatbot [compact]="true"></app-chatbot>
+    </section>
+
+    <button
+      type="button"
+      class="floating-chatbot__toggle"
+      [class.floating-chatbot__toggle--active]="chatbotPopupOpen"
+      (click)="toggleChatbotPopup()"
+      aria-label="Ouvrir le chatbot"
+    >
+      <mat-icon>{{ chatbotPopupOpen ? 'expand_more' : 'smart_toy' }}</mat-icon>
+      <span>Chatbot</span>
+    </button>
+  </div>
+
+  <div class="preview-overlay" *ngIf="selectedRecommendation as selected" (click)="closeRecommendationPreview()">
+    <div class="preview-modal" (click)="$event.stopPropagation()">
+      <div class="preview-modal__header">
+        <div>
+          <p class="preview-path">{{ selected.courseId || 'Cours' }} > {{ selected.chapterId || 'Chapitre' }}</p>
+          <h2>{{ selected.title }}</h2>
+        </div>
+        <button type="button" class="preview-close" (click)="closeRecommendationPreview()">X</button>
+      </div>
+
+      <div class="preview-modal__body">
+        <ng-container [ngSwitch]="selected.contentType.toLowerCase()">
+          <div *ngSwitchCase="'document'" class="preview-frame-wrap">
+            <div class="preview-document-toolbar">
+              <button
+                type="button"
+                class="preview-voice-button"
+                [class.preview-voice-button--active]="isPreviewDocumentVoiceActive(selected)"
+                [disabled]="previewDocumentVoiceLoading || !previewUrl"
+                (click)="togglePreviewDocumentVoice(selected)"
+              >
+                <mat-icon>
+                  {{ isPreviewDocumentVoiceActive(selected) ? 'stop_circle' : 'volume_up' }}
+                </mat-icon>
+                {{ previewDocumentVoiceLoading ? 'Chargement...' : isPreviewDocumentVoiceActive(selected) ? 'Arreter la lecture' : 'Lire le PDF' }}
+              </button>
+
+              <p *ngIf="previewDocumentVoiceMessage" class="preview-document-status">
+                {{ previewDocumentVoiceMessage }}
+              </p>
+            </div>
+
+            <iframe
+              *ngIf="previewUrl"
+              class="preview-frame"
+              [src]="previewUrl"
+              title="Apercu document etudiant"
+            ></iframe>
+            <p *ngIf="previewDocumentLoading" class="preview-empty">Chargement du document...</p>
+            <p *ngIf="previewDocumentError" class="preview-empty">{{ previewDocumentError }}</p>
+            <p *ngIf="!previewUrl && !previewDocumentLoading && !previewDocumentError" class="preview-empty">Document indisponible.</p>
+          </div>
+
+          <div *ngSwitchCase="'video'" class="preview-frame-wrap">
+            <iframe
+              *ngIf="previewVideoEmbedUrl"
+              class="preview-frame"
+              [src]="previewVideoEmbedUrl"
+              title="Apercu video YouTube"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowfullscreen
+            ></iframe>
+            <video
+              *ngIf="!previewVideoEmbedUrl && previewVideoUrl"
+              class="preview-video"
+              controls
+              preload="metadata"
+              (error)="onPreviewVideoError()"
+              (loadedmetadata)="onPreviewVideoReady()"
+            >
+              <source [src]="previewVideoUrl" [type]="previewVideoMimeType(previewVideoUrl)" />
+            </video>
+            <p *ngIf="!previewVideoEmbedUrl && !previewVideoUrl" class="preview-empty">Video indisponible.</p>
+            <p *ngIf="!previewVideoEmbedUrl && previewVideoUrl && previewVideoFailed" class="preview-empty">
+              Lecture impossible dans le navigateur. <a [href]="previewVideoUrl" target="_blank" rel="noopener noreferrer">Ouvrir la video</a>
+            </p>
+          </div>
+
+          <div *ngSwitchDefault class="preview-empty">
+            Ce contenu s'ouvre dans l'onglet Quiz.
+          </div>
+        </ng-container>
+      </div>
+    </div>
+  </div>
+
+  <div class="planner-celebration" *ngIf="plannerCelebration.visible">
+    <div class="planner-celebration__burst">
+      <button type="button" class="planner-modal-close" (click)="plannerCelebration.visible = false" aria-label="Fermer">
+        <mat-icon>close</mat-icon>
+      </button>
+      <mat-icon>celebration</mat-icon>
+      <h2>{{ plannerCelebration.message }}</h2>
+      <p>Continue comme ca, ton organisation avance tres bien.</p>
+    </div>
+  </div>
+
+  <div class="planner-modal-backdrop" *ngIf="plannerEventDialogOpen" (click)="closePlannerEventDialog()">
+    <section class="planner-modal" (click)="$event.stopPropagation()">
+      <button type="button" class="planner-modal-close" (click)="closePlannerEventDialog()" aria-label="Fermer">
+        <mat-icon>close</mat-icon>
+      </button>
+      <div class="planner-modal-title-row">
+        <h2>{{ plannerEventForm.id ? 'Modifier evenement' : 'Ajouter un evenement' }}</h2>
+        <button type="button" class="planner-modal-voice" (click)="announcePlannerDialog('event')" aria-label="Lire tous les champs de l'evenement">
+          <mat-icon>{{ isPlannerDialogVoiceActive('event') ? 'volume_up' : 'volume_off' }}</mat-icon>
+        </button>
+      </div>
+      <div class="planner-voice-field">
+        <input type="text" [(ngModel)]="plannerEventForm.title" placeholder="Titre de l'evenement" />
+        <button type="button" class="planner-field-voice" (click)="announcePlannerField('eventTitle')" aria-label="Lire le champ titre de l'evenement">
+          <mat-icon>{{ isPlannerFieldVoiceActive('eventTitle') ? 'volume_up' : 'volume_off' }}</mat-icon>
+        </button>
+      </div>
+      <div class="planner-modal-grid planner-modal-grid--event">
+        <div class="planner-date-field">
+          <div class="planner-voice-field">
+            <button type="button" class="planner-date-button" (click)="togglePlannerEventDatePicker()">
+              <span>{{ plannerEventForm.date | date:'dd/MM/yyyy' }}</span>
+              <mat-icon>calendar_today</mat-icon>
+            </button>
+            <button type="button" class="planner-field-voice" (click)="announcePlannerField('eventDate')" aria-label="Lire le champ date de l'evenement">
+              <mat-icon>{{ isPlannerFieldVoiceActive('eventDate') ? 'volume_up' : 'volume_off' }}</mat-icon>
+            </button>
+          </div>
+          <div class="planner-date-picker" *ngIf="plannerEventDatePickerOpen">
+            <div class="planner-date-picker__head">
+              <button type="button" class="icon-button" (click)="movePlannerEventPickerMonth(-1)">
+                <mat-icon>chevron_left</mat-icon>
+              </button>
+              <strong>{{ plannerEventPickerLabel }}</strong>
+              <button type="button" class="icon-button" (click)="movePlannerEventPickerMonth(1)">
+                <mat-icon>chevron_right</mat-icon>
+              </button>
+            </div>
+            <div class="planner-date-picker__grid">
+              <span>lu</span>
+              <span>ma</span>
+              <span>me</span>
+              <span>je</span>
+              <span>ve</span>
+              <span>sa</span>
+              <span>di</span>
+              <button
+                type="button"
+                *ngFor="let day of plannerEventPickerDays()"
+                [class.is-muted]="!day.isCurrentMonth"
+                [class.is-selected]="day.date === plannerEventForm.date"
+                [class.is-disabled]="day.isPast || day.isWeekend"
+                [disabled]="day.isPast || day.isWeekend"
+                (click)="selectPlannerEventDate(day)">
+                {{ day.dayNumber }}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="planner-voice-field">
+          <input type="time" [(ngModel)]="plannerEventForm.time" />
+          <button type="button" class="planner-field-voice" (click)="announcePlannerField('eventTime')" aria-label="Lire le champ heure de l'evenement">
+            <mat-icon>{{ isPlannerFieldVoiceActive('eventTime') ? 'volume_up' : 'volume_off' }}</mat-icon>
+          </button>
+        </div>
+      </div>
+      <div class="planner-voice-field planner-voice-field--textarea">
+        <textarea [(ngModel)]="plannerEventForm.notes" placeholder="Notes"></textarea>
+        <button type="button" class="planner-field-voice" (click)="announcePlannerField('eventNotes')" aria-label="Lire le champ notes de l'evenement">
+          <mat-icon>{{ isPlannerFieldVoiceActive('eventNotes') ? 'volume_up' : 'volume_off' }}</mat-icon>
+        </button>
+      </div>
+      <p class="planner-warning" *ngIf="!isPlannerDateSelectable(plannerEventForm.date)">
+        Les jours passes et les week-ends ne sont pas autorises.
+      </p>
+      <div class="planner-modal-actions">
+        <button type="button" class="planner-secondary-button" (click)="closePlannerEventDialog()">Annuler</button>
+        <button type="button" class="planner-primary-button" (click)="savePlannerEvent()" [disabled]="!isPlannerDateSelectable(plannerEventForm.date)">
+          {{ plannerEventForm.id ? 'Enregistrer' : 'Ajouter' }}
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <div class="planner-modal-backdrop" *ngIf="plannerTaskDialogOpen" (click)="closePlannerTaskDialog()">
+    <section class="planner-modal" (click)="$event.stopPropagation()">
+      <button type="button" class="planner-modal-close" (click)="closePlannerTaskDialog()" aria-label="Fermer">
+        <mat-icon>close</mat-icon>
+      </button>
+      <div class="planner-modal-title-row">
+        <h2>{{ plannerTaskForm.id ? 'Modifier tache' : 'Nouvelle tache' }}</h2>
+        <button type="button" class="planner-modal-voice" (click)="announcePlannerDialog('task')" aria-label="Lire tous les champs de la tache">
+          <mat-icon>{{ isPlannerDialogVoiceActive('task') ? 'volume_up' : 'volume_off' }}</mat-icon>
+        </button>
+      </div>
+      <div class="planner-voice-field">
+        <input type="text" [(ngModel)]="plannerTaskForm.title" placeholder="Reviser chapitre, faire exercice..." />
+        <button type="button" class="planner-field-voice" (click)="announcePlannerField('taskTitle')" aria-label="Lire le champ titre de la tache">
+          <mat-icon>{{ isPlannerFieldVoiceActive('taskTitle') ? 'volume_up' : 'volume_off' }}</mat-icon>
+        </button>
+      </div>
+      <div class="planner-modal-grid planner-modal-grid--task" *ngIf="plannerTaskForm.scope === 'week'">
+        <div class="planner-voice-field">
+          <input
+            type="date"
+            [(ngModel)]="plannerTaskForm.date"
+            [min]="plannerTaskWeekMinKey"
+            [max]="plannerTaskWeekMaxKey"
+            [disabled]="!plannerTaskWeekHasAvailableDate" />
+          <button type="button" class="planner-field-voice" (click)="announcePlannerField('taskDate')" aria-label="Lire le champ date de la tache">
+            <mat-icon>{{ isPlannerFieldVoiceActive('taskDate') ? 'volume_up' : 'volume_off' }}</mat-icon>
+          </button>
+        </div>
+      </div>
+      <p class="planner-date-hint" *ngIf="plannerTaskForm.scope === 'day'">
+        Date automatique : {{ plannerTaskTodayKey | date:'dd/MM/yyyy' }}
+      </p>
+      <div class="planner-voice-field planner-voice-field--textarea">
+        <textarea [(ngModel)]="plannerTaskForm.notes" placeholder="Notes"></textarea>
+        <button type="button" class="planner-field-voice" (click)="announcePlannerField('taskNotes')" aria-label="Lire le champ notes de la tache">
+          <mat-icon>{{ isPlannerFieldVoiceActive('taskNotes') ? 'volume_up' : 'volume_off' }}</mat-icon>
+        </button>
+      </div>
+      <p class="planner-warning" *ngIf="plannerTaskForm.scope === 'week' && !plannerTaskWeekHasAvailableDate">
+        Cette semaine est terminee, vous ne pouvez plus ajouter de tache.
+      </p>
+      <p class="planner-warning" *ngIf="plannerTaskForm.scope === 'week' && plannerTaskWeekHasAvailableDate && !isPlannerTaskDateSelectable(plannerTaskForm.date)">
+        Choisissez uniquement une date restante dans cette semaine.
+      </p>
+      <p class="planner-warning" *ngIf="plannerTaskForm.scope === 'day' && !isPlannerTaskDateSelectable(plannerTaskForm.date)">
+        Les jours passes ne sont pas autorises.
+      </p>
+      <div class="planner-modal-actions">
+        <button type="button" class="planner-secondary-button" (click)="closePlannerTaskDialog()">Annuler</button>
+        <button type="button" class="planner-primary-button" (click)="savePlannerTask()" [disabled]="!isPlannerTaskDateSelectable(plannerTaskForm.date)">
+          {{ plannerTaskForm.id ? 'Enregistrer' : 'Ajouter' }}
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <div class="planner-modal-backdrop" *ngIf="plannerDeleteTarget" (click)="closePlannerDeleteDialog()">
+    <section class="planner-modal planner-modal--confirm" (click)="$event.stopPropagation()">
+      <button type="button" class="planner-modal-close" (click)="closePlannerDeleteDialog()" aria-label="Fermer">
+        <mat-icon>close</mat-icon>
+      </button>
+      <mat-icon class="planner-confirm-icon">delete</mat-icon>
+      <h2>Confirmer la suppression</h2>
+      <p>Supprimer "{{ plannerDeleteTarget.title }}" ?</p>
+      <div class="planner-modal-actions">
+        <button type="button" class="planner-secondary-button" (click)="closePlannerDeleteDialog()">Annuler</button>
+        <button type="button" class="planner-primary-button planner-primary-button--danger" (click)="confirmPlannerDelete()">Supprimer</button>
+      </div>
+    </section>
+  </div>
+</div>
