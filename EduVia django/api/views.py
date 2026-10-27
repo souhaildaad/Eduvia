@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import os
@@ -5,6 +6,7 @@ import re
 import unicodedata
 import urllib.request
 import uuid
+import zipfile
 from urllib.parse import urlencode
 from datetime import date, datetime, time, timedelta
 from django.core.files.storage import default_storage
@@ -145,6 +147,14 @@ def _user(request):
 def _profile(user):
     _sync_legacy_mongo_users()
     role = 'admin' if user.is_superuser else user.user_role
+    initial_completed = True
+    if role == 'student':
+        initial_completed = bool(
+            str(user.level or '').strip()
+            or user.first_login_at is not None
+            or Resource.objects.filter(collection__in=('student/assessment', 'student/progress'), owner=user).exists()
+        )
+    face_enabled = bool(str(user.face_hash or '').strip())
     return {'id': str(user.pk), '_id': str(user.pk), 'userId': str(user.pk), 'email': user.email,
             'username': user.username, 'fullName': user.get_full_name() or user.username,
             'firstName': user.first_name, 'lastName': user.last_name,
@@ -152,6 +162,14 @@ def _profile(user):
             'assignedClasses': user.assigned_classes, 'teachingSubjects': user.teaching_subjects,
             'teachingAssignments': user.teaching_assignments, 'level': user.level, 'avatar': user.avatar,
             'avatarDataUrl': user.avatar,
+            'faceIdEnabled': face_enabled,
+            'initialAssessmentCompleted': initial_completed,
+            'profileData': {
+                'level': user.level,
+                'avatarDataUrl': user.avatar,
+                'initialAssessmentCompleted': initial_completed,
+                'faceIdEnabled': face_enabled,
+            },
             'emailVerified': user.email_verified, 'isActive': user.is_active,
             'isBlocked': not user.is_active, 'passwordChanged': user.password_changed,
             'keycloakId': user.keycloak_id, 'firstLoginAt': user.first_login_at,
@@ -1270,7 +1288,450 @@ def _teacher_exam_reminders(teacher, requested_class=''):
     }
 
 
+def _extract_uploaded_file_text(upload):
+    if not upload:
+        return ''
+    try:
+        upload.seek(0)
+        raw_bytes = upload.read()
+        upload.seek(0)
+    except Exception:
+        return ''
+    if not raw_bytes:
+        return ''
+    ext = os.path.splitext(getattr(upload, 'name', '') or '')[1].lower()
+    if ext == '.docx':
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw_bytes)) as archive:
+                if 'word/document.xml' in archive.namelist():
+                    xml_data = archive.read('word/document.xml').decode('utf-8', errors='ignore')
+                    xml_data = re.sub(r'</w:p>', '\n', xml_data)
+                    text = re.sub(r'<[^>]+>', ' ', xml_data)
+                    return re.sub(r'[ \t]+', ' ', text).strip()
+        except Exception:
+            pass
+    if ext in ('.txt', '.md', '.csv', '.json'):
+        for enc in ('utf-8', 'utf-8-sig', 'cp1252', 'latin-1'):
+            try:
+                return raw_bytes.decode(enc)
+            except Exception:
+                continue
+    # Fallback text extraction for PDF / DOC / binary files
+    decoded = raw_bytes.decode('utf-8', errors='ignore')
+    fragments = re.findall(r'[A-Za-zÀ-ÿ0-9 ,;:.?!\'\"()\-+/=\n]{8,}', decoded)
+    cleaned = '\n'.join(frag.strip() for frag in fragments if len(frag.strip()) >= 8)
+    return cleaned[:15000]
+
+
+_CURATED_QUIZ_BANK = [
+    {
+        'topics': {'etape', 'probleme', 'algorithme', 'analyse', 'specification', 'chapitre 1', '1.1', 'idee', 'programme', 'c'},
+        'prompt': "Quelle est la deuxième étape de la démarche de résolution d'un problème en programmation (après la position du problème) ?",
+        'options': [
+            {'label': 'A', 'text': "Spécification et analyse du problème (identifier entrées, sorties, contraintes et formules)"},
+            {'label': 'B', 'text': "Édition des liens avec les bibliothèques standard"},
+            {'label': 'C', 'text': "Exécution directe du fichier binaire sur le processeur"},
+            {'label': 'D', 'text': "Suppression des commentaires dans le code source"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "La 2e étape consiste à bien comprendre l'énoncé, identifier les données d'entrée, les résultats attendus, les contraintes et les formules de calcul avant d'écrire l'algorithme.",
+    },
+    {
+        'topics': {'executable', 'compilation', 'compilateur', 'edition', 'liens', 'objet', 'source', 'chapitre 1', '1.1', 'c'},
+        'prompt': "Quel est l'ordre exact des étapes permettant de transformer un fichier source en langage C (*.c) en un programme exécutable ?",
+        'options': [
+            {'label': 'A', 'text': "Fichier source (*.c) ➔ Compilation en fichier objet (*.o) ➔ Édition des liens (avec les bibliothèques) ➔ Exécutable"},
+            {'label': 'B', 'text': "Fichier objet (*.o) ➔ Fichier source (*.c) ➔ Interprétation HTML"},
+            {'label': 'C', 'text': "Édition des liens ➔ Écriture de l'algorithme ➔ Fichier source (*.c)"},
+            {'label': 'D', 'text': "Exécution ➔ Compilation ➔ Spécification du problème"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Le compilateur traduit d'abord les fichiers source (*.c) en fichiers objets (*.o), puis l'éditeur de liens les assemble avec les bibliothèques (libs) pour créer l'exécutable.",
+    },
+    {
+        'topics': {'structure', 'main', 'stdio', 'printf', 'scanf', 'chapitre 1', '1.2', 'c', 'programme'},
+        'prompt': "Dans un programme en langage C, quel est le rôle de la directive #include <stdio.h> et de la fonction main() ?",
+        'options': [
+            {'label': 'A', 'text': "#include <stdio.h> importe la bibliothèque d'entrées/sorties (printf, scanf) et main() est le point d'entrée obligatoire du programme"},
+            {'label': 'B', 'text': "#include <stdio.h> déclare une boucle infinie et main() affiche automatiquement du texte"},
+            {'label': 'C', 'text': "main() est facultative en langage C si on utilise printf()"},
+            {'label': 'D', 'text': "#include <stdio.h> sert uniquement à écrire des commentaires sur plusieurs lignes"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Tout programme C commence son exécution par la fonction principale main(), et <stdio.h> fournit les fonctions standard d'affichage (printf) et de lecture (scanf).",
+    },
+    {
+        'topics': {'commentaire', 'casse', 'minuscule', 'majuscule', 'mot', 'reserve', 'chapitre 1', '1.2', 'c'},
+        'prompt': "Laquelle de ces affirmations concernant la syntaxe du langage C est vraie ?",
+        'options': [
+            {'label': 'A', 'text': "Le langage C distingue les majuscules des minuscules et tous les mots réservés (if, else, for, while, return) s'écrivent en minuscules"},
+            {'label': 'B', 'text': "Les mots réservés IF, FOR et WHILE doivent obligatoirement être écrits en majuscules"},
+            {'label': 'C', 'text': "Les commentaires entre /* et */ sont exécutés par le processeur"},
+            {'label': 'D', 'text': "Les accolades { et } sont interdites dans la fonction main()"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Le langage C est sensible à la casse : tous ses mots réservés s'écrivent en minuscules, et les commentaires (/* ... */ ou //) sont ignorés à la compilation.",
+    },
+    {
+        'topics': {'condition', 'if', 'else', 'conditionnelle', 'chapitre 2', '2.1', '2.3', 'c', 'vrai', 'faux'},
+        'prompt': "En langage C, comment une expression conditionnelle dans une instruction if (Condition) est-elle évaluée ?",
+        'options': [
+            {'label': 'A', 'text': "La valeur 0 correspond à Faux, et toute valeur différente de 0 correspond à Vrai"},
+            {'label': 'B', 'text': "La valeur 0 correspond à Vrai, et toute valeur positive correspond à Faux"},
+            {'label': 'C', 'text': "Les parenthèses autour de la condition sont interdites après le mot-clé if"},
+            {'label': 'D', 'text': "Le bloc else est exécuté même lorsque la condition du if est vraie"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "En C, toute expression numérique valant 0 est évaluée comme fausse, tandis que toute valeur non nulle (!= 0) est évaluée comme vraie.",
+    },
+    {
+        'topics': {'operateur', 'logique', 'condition', 'if', 'else', 'imbrique', 'switch', 'chapitre 2', '2.1', '2.3', 'c'},
+        'prompt': "Quels sont les opérateurs logiques ET / OU en langage C, et quelle structure est la plus lisible pour gérer un menu à choix fixes ?",
+        'options': [
+            {'label': 'A', 'text': "&& pour le ET logique, || pour le OU logique, et la structure switch pour les menus à choix fixes"},
+            {'label': 'B', 'text': "AND pour le ET logique, OR pour le OU logique, et la boucle for pour les menus"},
+            {'label': 'C', 'text': "= pour la comparaison d'égalité et == pour l'affectation d'une valeur"},
+            {'label': 'D', 'text': "& pour le OU logique et | pour le ET logique"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "En C, && représente le ET logique, || le OU logique, == la comparaison d'égalité, et switch offre la meilleure lisibilité pour des choix multiples fixes.",
+    },
+    {
+        'topics': {'boucle', 'for', 'iterative', 'iteration', 'compteur', 'chapitre 3', '3.1', 'c'},
+        'prompt': "Quand utilise-t-on la boucle « for (Init; Condition; Pas) » en langage C et quelle règle faut-il respecter ?",
+        'options': [
+            {'label': 'A', 'text': "Lorsque le nombre d'itérations est connu à l'avance, en évitant de modifier la variable limite dans le corps de la boucle"},
+            {'label': 'B', 'text': "Uniquement lorsque le nombre de répétitions est inconnu et dépend d'une saisie clavier aléatoire"},
+            {'label': 'C', 'text': "En modifiant systématiquement la borne limite à chaque tour dans le corps de la boucle"},
+            {'label': 'D', 'text': "Pour déclarer une bibliothèque standard au début du fichier"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "La boucle for utilise un compteur d'itération quand le nombre de répétitions est connu à l'avance. Modifier la borne limite dans le corps de la boucle provoque des erreurs logiques.",
+    },
+    {
+        'topics': {'pitch', 'impact', 'poster', 'cdio', 'ccca4', 'cta', 'headline', 'idea'},
+        'prompt': "Dans le guide IDEA PITCH (PI-CDIO), que signifient les lettres du modèle IMPACT pour structurer une présentation persuasive ?",
+        'options': [
+            {'label': 'A', 'text': "Ignite curiosity, Make the problem real, Present the shift, Amplify the value, Chart the future, Trigger action"},
+            {'label': 'B', 'text': "Initialize code, Manage memory, Print output, Allocate pointers, Compile files, Test binary"},
+            {'label': 'C', 'text': "Introduce team, Mention budget, Provide code, Ask questions, Close slides, Thank jury"},
+            {'label': 'D', 'text': "Identify bugs, Measure speed, Patch kernel, Archive logs, Check network, Terminate process"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Le modèle IMPACT guide le storytelling persuasif du pitch : capter l'attention (Ignite), ancrer le problème (Make real), présenter la solution et sa valeur (Present & Amplify), projeter l'avenir (Chart) et appeler à l'action (Trigger action).",
+    },
+    {
+        'topics': {'pitch', 'poster', 'cdio', 'ccca4', 'cta', 'headline', 'benefits'},
+        'prompt': "Quels sont les 7 éléments indispensables d'un poster IDEA PITCH réussi selon le guide CCCA4 ?",
+        'options': [
+            {'label': 'A', 'text': "Headline, The Problem, The Solution, Three Key Benefits, Uniqueness, Evidence, Call to Action (CTA + QR Code)"},
+            {'label': 'B', 'text': "Code source complet, Schéma UML, Base de données SQL, Bibliographie, CV, Annexe financière, Licence"},
+            {'label': 'C', 'text': "Uniquement un titre et un long texte technique de 1000 mots sans visuel"},
+            {'label': 'D', 'text': "Table des matières, Introduction théorique, 15 fonctionnalités techniques, Conclusion"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Le poster commercial doit être compris en quelques secondes grâce à ces 7 blocs orientés valeur utilisateur et preuves chiffrées.",
+    },
+]
+
+
+def _generate_quiz_questions(title='', description='', difficulty='medium', question_count=5,
+                             source_chapter='', course_id='', chapter_id='', source_text=''):
+    try:
+        count = max(1, min(int(question_count or 5), 20))
+    except (TypeError, ValueError):
+        count = 5
+
+    context_blob = ' '.join(filter(None, [title, description, source_chapter, course_id, chapter_id, source_text]))
+    query_tokens = set(_tokenize_course_text(context_blob))
+
+    scored_bank = []
+    for idx, item in enumerate(_CURATED_QUIZ_BANK):
+        overlap = len(query_tokens & item['topics'])
+        scored_bank.append((overlap, -idx, item))
+    scored_bank.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
+
+    selected = []
+    used_prompts = set()
+
+    # If the teacher provided custom text (from file or description), extract key statements to create custom questions first
+    clean_lines = [
+        line.strip(' •-*0123456789.)\t')
+        for line in re.split(r'[\n.;]+', f'{source_text}\n{description}')
+        if 35 <= len(line.strip()) <= 220 and not re.search(r'(http|www\.|@)', line)
+    ]
+    topic_label = str(source_chapter or chapter_id or title or course_id or 'ce chapitre').strip()
+    for line in clean_lines[:max(0, count // 2)]:
+        norm_line = _normalized_text(line)
+        if norm_line in used_prompts:
+            continue
+        used_prompts.add(norm_line)
+        selected.append({
+            'id': f'q-{len(selected) + 1}',
+            'prompt': f"Concernant « {topic_label} », quelle proposition correspond exactement au contenu du cours ?",
+            'type': 'single',
+            'options': [
+                {'label': 'A', 'text': line},
+                {'label': 'B', 'text': "Cette notion n'est jamais utilisée lors de la phase d'analyse ou d'implémentation."},
+                {'label': 'C', 'text': "Le cours indique que cette étape est facultative et ignorée lors de l'exécution."},
+                {'label': 'D', 'text': "Cette règle s'applique uniquement aux commentaires et non à la logique du sujet."},
+            ],
+            'correctAnswers': ['A'],
+            'explanation': f"D'après le support de cours ({topic_label}) : {line}",
+        })
+
+    for _, _, item in scored_bank:
+        if len(selected) >= count:
+            break
+        norm_p = _normalized_text(item['prompt'])
+        if norm_p in used_prompts:
+            continue
+        used_prompts.add(norm_p)
+        selected.append({
+            'id': f'q-{len(selected) + 1}',
+            'prompt': item['prompt'],
+            'type': 'single',
+            'options': [dict(opt) for opt in item['options']],
+            'correctAnswers': list(item['correctAnswers']),
+            'explanation': item['explanation'],
+        })
+
+    # If count is still higher than selected (e.g. > 9 questions requested), synthesize additional questions from KB chunks
+    kb_chunks = _load_course_knowledge_chunks()
+    for chunk in kb_chunks:
+        if len(selected) >= count:
+            break
+        snippet = str(chunk.get('text') or '').strip().split('\n')[0][:180].strip()
+        if len(snippet) < 25:
+            continue
+        prompt = f"D'après la section « {chunk.get('topic') or chunk.get('source') or topic_label} », quel énoncé est exact ?"
+        if _normalized_text(prompt) in used_prompts:
+            continue
+        used_prompts.add(_normalized_text(prompt))
+        selected.append({
+            'id': f'q-{len(selected) + 1}',
+            'prompt': prompt,
+            'type': 'single',
+            'options': [
+                {'label': 'A', 'text': snippet},
+                {'label': 'B', 'text': "L'exécution se fait sans aucune étape d'analyse ni de compilation."},
+                {'label': 'C', 'text': "Les instructions sont exécutées dans un ordre aléatoire."},
+                {'label': 'D', 'text': "Aucune vérification syntaxique ou logique n'est requise."},
+            ],
+            'correctAnswers': ['A'],
+            'explanation': f"Extrait du cours ({chunk.get('source')}) : {snippet}",
+        })
+
+    return selected[:count]
+
+
+def _parse_quiz_questions_from_text(raw_text, fallback_title='', fallback_course='', count=5):
+    text = str(raw_text or '').replace('\r\n', '\n').replace('\r', '\n').strip()
+    parsed_questions = []
+    if text:
+        lines = [line.strip() for line in text.split('\n') if line.strip()]
+        current_q = None
+        option_pattern = re.compile(r'^([*✓✔]?\s*)([A-Da-d])[\)\.\:\-]\s*(.+)$')
+        answer_pattern = re.compile(r'^(?:bonne\s+r[eé]ponse|r[eé]ponse\s+correcte|r[eé]ponse|correct|answer|solution)\s*[\:\-]?\s*([A-Da-d](?:\s*[,\s]\s*[A-Da-d])*)\b', re.I)
+        explanation_pattern = re.compile(r'^(?:explication|justification|correction|note)\s*[\:\-]\s*(.+)$', re.I)
+        question_start_pattern = re.compile(r'^(?:question\s*\d+|q\s*\d+|\d+[\)\.\-])\s*[\:\-]?\s*(.+)$', re.I)
+
+        def _flush_question(q_obj):
+            if not q_obj or not q_obj.get('prompt') or len(q_obj.get('options') or []) < 2:
+                return
+            labels = ['A', 'B', 'C', 'D']
+            normalized_opts = []
+            for idx, opt in enumerate(q_obj['options'][:4]):
+                lbl = labels[idx]
+                normalized_opts.append({'label': lbl, 'text': opt['text']})
+            while len(normalized_opts) < 4:
+                lbl = labels[len(normalized_opts)]
+                normalized_opts.append({'label': lbl, 'text': f'Option {lbl}'})
+            correct = [c.upper() for c in q_obj.get('correctAnswers', []) if c.upper() in labels]
+            if not correct:
+                correct = ['A']
+            parsed_questions.append({
+                'id': f'q-{len(parsed_questions) + 1}',
+                'prompt': q_obj['prompt'],
+                'type': 'multiple' if len(correct) > 1 else 'single',
+                'options': normalized_opts,
+                'correctAnswers': correct,
+                'explanation': q_obj.get('explanation') or f"La bonne réponse est {', '.join(correct)}.",
+            })
+
+        for line in lines:
+            ans_match = answer_pattern.match(line)
+            if ans_match and current_q:
+                found = re.findall(r'[A-Da-d]', ans_match.group(1))
+                current_q['correctAnswers'] = [c.upper() for c in found]
+                continue
+            exp_match = explanation_pattern.match(line)
+            if exp_match and current_q:
+                current_q['explanation'] = exp_match.group(1).strip()
+                continue
+            opt_match = option_pattern.match(line)
+            if opt_match:
+                if not current_q:
+                    current_q = {'prompt': f'Question {len(parsed_questions) + 1}', 'options': [], 'correctAnswers': [], 'explanation': ''}
+                starred = bool(opt_match.group(1).strip())
+                lbl = opt_match.group(2).upper()
+                opt_text = opt_match.group(3).strip()
+                if opt_text.endswith('*'):
+                    starred = True
+                    opt_text = opt_text[:-1].strip()
+                current_q['options'].append({'label': lbl, 'text': opt_text})
+                if starred and lbl not in current_q['correctAnswers']:
+                    current_q['correctAnswers'].append(lbl)
+                continue
+            q_match = question_start_pattern.match(line)
+            if q_match or (line.endswith('?') and (not current_q or current_q.get('options'))):
+                _flush_question(current_q)
+                prompt_text = q_match.group(1).strip() if q_match else line
+                current_q = {'prompt': prompt_text, 'options': [], 'correctAnswers': [], 'explanation': ''}
+            elif current_q and not current_q['options']:
+                current_q['prompt'] = f"{current_q['prompt']} {line}".strip()
+
+        _flush_question(current_q)
+
+    if parsed_questions:
+        return parsed_questions
+    return _generate_quiz_questions(
+        title=fallback_title,
+        course_id=fallback_course,
+        source_text=text,
+        question_count=count,
+    )
+
+
+def _reclamations(request, body, parts, user):
+    if not user:
+        return JsonResponse({'success': False, 'message': 'Authentification requise'}, status=401)
+    is_admin = bool(user.is_superuser or user.user_role == 'admin')
+    qs = Resource.objects.filter(collection='reclamations')
+
+    if len(parts) == 2 and request.method == 'GET':
+        records = list(qs)
+        if not is_admin:
+            user_email = str(user.email or '').strip().casefold()
+            records = [
+                r for r in records
+                if r.owner_id == user.pk or str((r.payload or {}).get('authorEmail') or '').strip().casefold() == user_email
+            ]
+        items = []
+        for r in records:
+            item = _resource_dict(r)
+            item['createdAt'] = item.get('createdAt') or r.created_at.isoformat()
+            item['updatedAt'] = item.get('updatedAt') or r.updated_at.isoformat()
+            items.append(item)
+        items.sort(key=lambda x: str(x.get('createdAt') or ''), reverse=True)
+        stats = {
+            'total': len(items),
+            'pending': sum(1 for i in items if str(i.get('status') or 'En attente') == 'En attente'),
+            'inProgress': sum(1 for i in items if str(i.get('status') or '') == 'En cours'),
+            'resolved': sum(1 for i in items if str(i.get('status') or '') == 'Résolue'),
+            'rejected': sum(1 for i in items if str(i.get('status') or '') == 'Rejetée'),
+            'studentsCount': sum(1 for i in items if str(i.get('authorRole') or 'student') == 'student'),
+            'teachersCount': sum(1 for i in items if str(i.get('authorRole') or '') == 'teacher'),
+        }
+        return _response(items, items=items, stats=stats)
+
+    if len(parts) == 2 and request.method == 'POST':
+        subject = str(body.get('subject') or body.get('title') or '').strip()
+        message = str(body.get('message') or body.get('description') or '').strip()
+        category = str(body.get('category') or 'Pédagogique / Cours').strip()
+        priority = str(body.get('priority') or 'Moyenne').strip()
+        if not subject or not message:
+            return JsonResponse({'success': False, 'message': 'Le sujet et la description de la réclamation sont obligatoires.'}, status=400)
+        role = 'teacher' if user.user_role == 'teacher' else ('admin' if is_admin else 'student')
+        now_iso = timezone.now().isoformat()
+        payload = {
+            'subject': subject,
+            'category': category,
+            'priority': priority if priority in ('Basse', 'Moyenne', 'Haute', 'Urgente') else 'Moyenne',
+            'message': message,
+            'status': 'En attente',
+            'adminResponse': '',
+            'respondedAt': None,
+            'respondedBy': '',
+            'authorId': str(user.pk),
+            'authorName': user.get_full_name() or user.username,
+            'authorEmail': user.email,
+            'authorRole': role,
+            'authorClass': user.class_name or (', '.join(user.assigned_classes[:2]) if isinstance(user.assigned_classes, list) and user.assigned_classes else ''),
+            'createdAt': now_iso,
+            'updatedAt': now_iso,
+        }
+        rec = _save_record('reclamations', payload, user)
+        # Notify admins
+        for admin_user in User.objects.filter(Q(is_superuser=True) | Q(user_role='admin'), is_active=True):
+            _save_record('notifications', {
+                'title': f"Nouvelle réclamation ({'Enseignant' if role == 'teacher' else 'Étudiant'})",
+                'message': f"{payload['authorName']} a soumis une réclamation : « {subject} ».",
+                'type': 'warning',
+                'read': False,
+                'dismissed': False,
+                'createdAt': now_iso,
+            }, admin_user)
+        return _response(_resource_dict(rec))
+
+    if len(parts) == 3:
+        rec = qs.filter(public_id=parts[2]).first()
+        if not rec:
+            return JsonResponse({'success': False, 'message': 'Réclamation introuvable'}, status=404)
+        is_owner = bool(rec.owner_id == user.pk or str((rec.payload or {}).get('authorEmail') or '').strip().casefold() == str(user.email or '').strip().casefold())
+        if not is_admin and not is_owner:
+            return JsonResponse({'success': False, 'message': 'Accès refusé'}, status=403)
+
+        if request.method in ('PATCH', 'PUT'):
+            now_iso = timezone.now().isoformat()
+            if is_admin:
+                new_status = str(body.get('status') or rec.payload.get('status') or 'En attente').strip()
+                if new_status in ('En attente', 'En cours', 'Résolue', 'Rejetée'):
+                    rec.payload['status'] = new_status
+                if 'adminResponse' in body:
+                    rec.payload['adminResponse'] = str(body.get('adminResponse') or '').strip()
+                    rec.payload['respondedAt'] = now_iso
+                    rec.payload['respondedBy'] = user.get_full_name() or user.username or user.email
+                for key in ('priority', 'category', 'subject', 'message'):
+                    if key in body and str(body.get(key) or '').strip():
+                        rec.payload[key] = str(body.get(key)).strip()
+                rec.payload['updatedAt'] = now_iso
+                rec.save(update_fields=['payload', 'updated_at'])
+                # Notify author of admin update
+                target_author = rec.owner or User.objects.filter(email__iexact=str(rec.payload.get('authorEmail') or '')).first()
+                if target_author:
+                    _save_record('notifications', {
+                        'title': f"Mise à jour de votre réclamation : {rec.payload.get('status')}",
+                        'message': f"Sujet : « {rec.payload.get('subject')} »" + (f" — Réponse de l'administration : {rec.payload.get('adminResponse')}" if rec.payload.get('adminResponse') else ''),
+                        'type': 'success' if rec.payload.get('status') == 'Résolue' else 'info',
+                        'read': False,
+                        'dismissed': False,
+                        'createdAt': now_iso,
+                    }, target_author)
+                return _response(_resource_dict(rec))
+            else:
+                if str(rec.payload.get('status') or 'En attente') != 'En attente':
+                    return JsonResponse({'success': False, 'message': 'Cette réclamation est déjà en cours de traitement par l’administration.'}, status=400)
+                for key in ('subject', 'category', 'priority', 'message'):
+                    if key in body and str(body.get(key) or '').strip():
+                        rec.payload[key] = str(body.get(key)).strip()
+                rec.payload['updatedAt'] = now_iso
+                rec.save(update_fields=['payload', 'updated_at'])
+                return _response(_resource_dict(rec))
+
+        if request.method == 'DELETE':
+            rec.delete()
+            return _response({'deleted': True})
+
+    return None
+
+
 def _domain_api(request, body, parts, user):
+    if parts[:2] == ['api', 'reclamations'] or parts[:1] == ['reclamations']:
+        norm_parts = parts if parts[:1] == ['api'] else ['api', *parts]
+        result = _reclamations(request, body, norm_parts, user)
+        if result is not None:
+            return result
     if parts[:2] == ['api','student'] and not user:
         return JsonResponse({'success':False,'message':'Authentification requise'}, status=401)
     if parts[:2] == ['api', 'student'] and len(parts) > 2 and parts[2] == 'planner':
@@ -1482,9 +1943,20 @@ def _domain_api(request, body, parts, user):
             extension = os.path.splitext(upload.name)[1].lower()
             if extension not in ('.pdf','.doc','.docx','.mp4','.mov','.avi','.webm','.mkv'):
                 return JsonResponse({'success':False,'message':'Format de fichier non autorisé'}, status=400)
+            extracted_text = ''
+            if 'quiz' in str(record.payload.get('type') or '').casefold() and not (record.payload.get('quizQuestions') or []):
+                extracted_text = _extract_uploaded_file_text(upload)
             safe_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', os.path.basename(upload.name))
             stored = default_storage.save(f'{uuid.uuid4().hex}-{safe_name}', upload)
-            record.payload.update({'fileUrl':'/uploads/'+stored, 'fileName':upload.name})
+            updates = {'fileUrl':'/uploads/'+stored, 'fileName':upload.name}
+            if 'quiz' in str(record.payload.get('type') or '').casefold() and not (record.payload.get('quizQuestions') or []):
+                updates['quizQuestions'] = _parse_quiz_questions_from_text(
+                    extracted_text,
+                    fallback_title=str(record.payload.get('title') or upload.name),
+                    fallback_course=str(record.payload.get('courseId') or ''),
+                    count=int(record.payload.get('questionCount') or 5),
+                )
+            record.payload.update(updates)
             record.save(update_fields=['payload','updated_at'])
             return _response({'message':'File uploaded and linked to content','content':_resource_dict(record),'fileUrl':'/uploads/'+stored})
         if len(parts) == 2 and request.method == 'GET':
@@ -1525,8 +1997,53 @@ def _domain_api(request, body, parts, user):
                 'items': contents,
                 'data': contents,
             })
-        if len(parts) == 3 and parts[2] in ('generate-quiz','generate-flashcards','parse-quiz'):
-            return JsonResponse({'message': 'Le service de génération de contenu doit être configuré via EduVia-AI.'}, status=503)
+        if len(parts) == 3 and parts[2] == 'generate-quiz' and request.method == 'POST':
+            chapter_file = request.FILES.get('chapterFile') or request.FILES.get('file')
+            source_text = _extract_uploaded_file_text(chapter_file)
+            title = str(request.POST.get('title') or body.get('title') or '').strip()
+            description = str(request.POST.get('description') or body.get('description') or '').strip()
+            difficulty = str(request.POST.get('difficulty') or body.get('difficulty') or 'medium').strip()
+            q_count = request.POST.get('questionCount') or body.get('questionCount') or 5
+            source_chapter = str(request.POST.get('sourceChapter') or body.get('sourceChapter') or '').strip()
+            course_id = str(request.POST.get('courseId') or body.get('courseId') or '').strip()
+            chapter_id = str(request.POST.get('chapterId') or body.get('chapterId') or '').strip()
+            questions = _generate_quiz_questions(
+                title=title,
+                description=description,
+                difficulty=difficulty,
+                question_count=q_count,
+                source_chapter=source_chapter,
+                course_id=course_id,
+                chapter_id=chapter_id,
+                source_text=source_text,
+            )
+            return JsonResponse({'success': True, 'questions': questions, 'data': {'questions': questions}})
+        if len(parts) == 3 and parts[2] == 'parse-quiz' and request.method == 'POST':
+            quiz_file = request.FILES.get('quizFile') or request.FILES.get('file')
+            source_text = _extract_uploaded_file_text(quiz_file)
+            fallback_name = os.path.splitext(getattr(quiz_file, 'name', '') or 'Quiz')[0]
+            questions = _parse_quiz_questions_from_text(
+                source_text,
+                fallback_title=fallback_name,
+                fallback_course=str(request.POST.get('courseId') or body.get('courseId') or ''),
+                count=int(request.POST.get('questionCount') or body.get('questionCount') or 5),
+            )
+            return JsonResponse({'success': True, 'questions': questions, 'data': {'questions': questions}})
+        if len(parts) == 3 and parts[2] == 'generate-flashcards' and request.method == 'POST':
+            questions = _generate_quiz_questions(
+                title=str(body.get('title') or body.get('subject') or 'Cours'),
+                question_count=body.get('questionCount') or 6,
+            )
+            cards = [
+                {
+                    'id': q['id'],
+                    'question': q['prompt'],
+                    'answer': q['options'][0]['text'] if q.get('options') else q.get('explanation', ''),
+                    'explanation': q.get('explanation', ''),
+                }
+                for q in questions
+            ]
+            return JsonResponse({'success': True, 'flashcards': cards, 'cards': cards})
         if len(parts) == 3:
             rec = qs.filter(public_id=parts[2]).first()
             if request.method in ('PATCH','PUT') and rec:
@@ -1683,9 +2200,21 @@ def _domain_api(request, body, parts, user):
                 },
             })
         if sub == 'level' and request.method == 'POST':
-            user.level = str(body.get('level', user.level))
-            user.save(update_fields=['level'])
-            return _response({'level': user.level})
+            user.level = str(body.get('level') or user.level or 'debutant').strip()
+            if not user.first_login_at:
+                user.first_login_at = timezone.now()
+            user.save(update_fields=['level', 'first_login_at'])
+            _save_record(
+                'student/assessment',
+                {
+                    'level': user.level,
+                    'score': body.get('score'),
+                    'completedAt': timezone.now().isoformat(),
+                },
+                user,
+                public_id=f'assessment-{user.pk}',
+            )
+            return _response({'level': user.level, 'initialAssessmentCompleted': True, 'user': _profile(user)})
         if sub == 'assistant' and len(parts) > 3 and parts[3] == 'ask' and request.method == 'POST':
             question = str(body.get('question') or body.get('message') or '').strip()
             answer = _ask_course_chatbot(
@@ -2232,19 +2761,50 @@ def api(request, path=''):
             })
         if action in ('forgot-password', 'reset-password', 'change-password', 'validate-current-password'):
             return _response({'message': 'Demande traitée'})
-        if action == 'face-id/config': return _response({'hashLength': 64, 'matchThreshold': 8, 'duplicateThreshold': 8, 'ambiguityMargin': 2})
-        if action == 'face-id/enroll' and request.method == 'POST':
+        sub_action = '/'.join(parts[1:3])
+        if action == 'face-id/config' or sub_action == 'face-id/config':
+            return _response({'hashLength': 256, 'matchThreshold': 82, 'duplicateThreshold': 40, 'ambiguityMargin': 6})
+        if (action == 'face-id/enroll' or sub_action == 'face-id/enroll') and request.method in ('POST', 'DELETE'):
             user = _user(request)
-            face_hash = str(body.get('faceHash', ''))
-            if not user: return JsonResponse({'success':False}, status=401)
-            if not re.fullmatch(r'[01]{64}', face_hash): return JsonResponse({'success':False,'message':'Invalid face hash'}, status=400)
-            user.face_hash = face_hash; user.save(update_fields=['face_hash']); return _response({'enrolled':True})
-        if action == 'face-id/login' and request.method == 'POST':
-            face_hash = str(body.get('faceHash',''))
-            user = User.objects.filter(face_hash=face_hash).first() if re.fullmatch(r'[01]{64}', face_hash) else None
-            if user and body.get('role') and user.user_role != body['role']: user = None
-            if not user: return JsonResponse({'success':False,'message':'Face ID not recognized'}, status=401)
-            token = _token(user); return _response({'access_token':token,'refresh_token':token,'user':_profile(user)})
+            if not user:
+                return JsonResponse({'success': False, 'message': 'Authentification requise'}, status=401)
+            if request.method == 'DELETE':
+                user.face_hash = ''
+                user.save(update_fields=['face_hash'])
+                return _response({'enrolled': False, 'faceIdEnabled': False, 'user': _profile(user)})
+            face_hash = str(body.get('faceHash', '')).strip()
+            if not re.fullmatch(r'[01]{64,512}', face_hash):
+                return JsonResponse({'success': False, 'message': 'Empreinte faciale invalide. Veuillez réessayer face à la caméra.'}, status=400)
+            user.face_hash = face_hash
+            user.save(update_fields=['face_hash'])
+            return _response({'enrolled': True, 'faceIdEnabled': True, 'user': _profile(user), 'message': 'Face ID enregistré avec succès.'})
+        if (action == 'face-id/login' or sub_action == 'face-id/login') and request.method == 'POST':
+            face_hash = str(body.get('faceHash', '')).strip()
+            if not re.fullmatch(r'[01]{64,512}', face_hash):
+                return JsonResponse({'success': False, 'message': 'Empreinte faciale invalide.'}, status=400)
+            requested_role = str(body.get('role') or '').strip().lower()
+            candidates = User.objects.filter(is_active=True).exclude(face_hash='')
+            if requested_role in ('student', 'teacher'):
+                candidates = candidates.filter(user_role=requested_role)
+            best_user = None
+            best_distance = 10**9
+            for candidate in candidates:
+                stored_hash = str(candidate.face_hash or '').strip()
+                if len(stored_hash) != len(face_hash):
+                    continue
+                distance = sum(1 for a, b in zip(stored_hash, face_hash) if a != b)
+                if distance < best_distance:
+                    best_distance = distance
+                    best_user = candidate
+            max_allowed = round(len(face_hash) * 0.35)
+            if not best_user or best_distance > max_allowed:
+                return JsonResponse({
+                    'success': False,
+                    'message': "Visage non reconnu ou aucun Face ID configuré pour ce profil. Activez d'abord Face ID dans Paramètres.",
+                }, status=401)
+            token = _token(best_user)
+            profile = _profile(best_user)
+            return _response({'access_token': token, 'refresh_token': _refresh_token(best_user), 'user': profile, 'role': profile['role']})
         if action in ('teacher-course-members', 'teacher-exam-reminders'):
             user = _user(request)
             if not user or user.user_role not in ('teacher','admin'): return JsonResponse({'success':False}, status=403)
@@ -2255,7 +2815,7 @@ def api(request, path=''):
         if action == 'student-classes':
             _sync_legacy_mongo_users()
             return _response(list(User.objects.exclude(class_name='').values_list('class_name', flat=True).distinct()))
-        if action in ('users', 'admin/create-user'):
+        if action in ('users', 'admin/create-user') or sub_action == 'admin/create-user':
             user = _user(request)
             if not user or not user.is_superuser: return JsonResponse({'success':False,'message':'Permission denied'}, status=403)
             if len(parts) == 4 and parts[3] == 'resend-verification' and request.method == 'POST':

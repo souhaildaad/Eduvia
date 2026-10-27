@@ -4,9 +4,10 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { UserManagement } from '../user-management/user-management';
 import { InternshipManagement } from '../internship-management/internship-management';
+import { ReclamationsPanelComponent } from '../../shared/reclamations-panel/reclamations-panel';
 import { AuthService } from '../../../services/auth.service';
 
-type AdminTab = 'overview' | 'users' | 'internships';
+type AdminTab = 'overview' | 'users' | 'internships' | 'reclamations';
 
 @Component({
   selector: 'app-admin-dashboard',
@@ -17,6 +18,7 @@ type AdminTab = 'overview' | 'users' | 'internships';
     MatIconModule,
     UserManagement,
     InternshipManagement,
+    ReclamationsPanelComponent,
   ],
   templateUrl: './admin-dashboard.html',
   styleUrls: ['./admin-dashboard.css'],
@@ -42,6 +44,7 @@ export class AdminDashboard implements OnInit {
     { id: 'overview', label: "Vue d'ensemble", icon: 'bar_chart' },
     { id: 'users', label: 'Utilisateurs', icon: 'group' },
     { id: 'internships', label: 'Stages', icon: 'work' },
+    { id: 'reclamations', label: 'Reclamations', icon: 'report_problem' },
   ];
 
   constructor(

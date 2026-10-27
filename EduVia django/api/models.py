@@ -8,7 +8,7 @@ class User(AbstractUser):
     user_role = models.CharField(max_length=20, default='student')
     class_name = models.CharField(max_length=120, blank=True)
     avatar = models.TextField(blank=True)
-    face_hash = models.CharField(max_length=128, blank=True)
+    face_hash = models.TextField(blank=True)
     assigned_classes = models.JSONField(default=list, blank=True)
     teaching_subjects = models.JSONField(default=list, blank=True)
     teaching_assignments = models.JSONField(default=list, blank=True)

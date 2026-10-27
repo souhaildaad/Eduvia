@@ -1,4 +1,4 @@
-﻿import { Component, OnInit, Output, EventEmitter } from '@angular/core';
+import { Component, OnInit, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ChangeDetectorRef } from '@angular/core';
@@ -15,6 +15,7 @@ import { StudentTracking } from '../teacher/student-tracking/student-tracking';
 import { TeacherProfileSettingsComponent } from '../teacher/teacher-profile-settings/teacher-profile-settings';
 import { ContentManagement } from '../teacher/content-management/content-management';
 import { ExamReminders } from '../teacher/exam-reminders/exam-reminders';
+import { ReclamationsPanelComponent } from '../shared/reclamations-panel/reclamations-panel';
 import { VoicePlaybackService } from '../../services/voice-playback.service';
 import { environment } from '../../../environments/environment';
 
@@ -82,6 +83,7 @@ type MeetSession = {
     TeacherProfileSettingsComponent,
     ContentManagement,
     ExamReminders,
+    ReclamationsPanelComponent,
   ],
   templateUrl: './teacher-dashboard.html',
   styleUrls: ['./teacher-dashboard.css'],

@@ -1374,6 +1374,10 @@
     </div>
   </div>
 
+  <section *ngIf="activeTab === 'reclamations'" class="embedded-section">
+    <app-reclamations-panel mode="student"></app-reclamations-panel>
+  </section>
+
   <section *ngIf="activeTab === 'parametres'" class="embedded-section">
     <app-teacher-profile-settings></app-teacher-profile-settings>
   </section>

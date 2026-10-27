@@ -575,7 +575,7 @@ export class Login implements OnChanges, OnDestroy {
 
     const average = grayscale.reduce((sum, value) => sum + value, 0) / grayscale.length;
     const variance = grayscale.reduce((sum, value) => sum + Math.pow(value - average, 2), 0) / grayscale.length;
-    if (average < 45 || average > 225 || variance < 220) {
+    if (average < 18 || average > 245 || variance < 45) {
       return { ok: false, message: 'Visage pas assez clair. Placez votre visage complet face a la camera avec une bonne lumiere.' };
     }
 

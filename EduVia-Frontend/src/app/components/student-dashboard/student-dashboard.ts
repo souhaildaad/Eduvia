@@ -15,6 +15,7 @@ import { VoicePlaybackService } from '../../services/voice-playback.service';
 import { NotificationService } from '../../services/notification.service';
 import { environment } from '../../../environments/environment';
 import { AiAssessment } from '../student/ai-assessment/ai-assessment';
+import { ReclamationsPanelComponent } from '../shared/reclamations-panel/reclamations-panel';
 
 type StudentLevel = 'debutant' | 'intermediaire' | 'avance';
 type StudentTab =
@@ -29,6 +30,7 @@ type StudentTab =
   | 'flashcards'
   | 'classement'
   | 'stages'
+  | 'reclamations'
   | 'parametres';
 
 type PlannerViewMode = 'day' | 'week' | 'month';
@@ -390,6 +392,7 @@ type MeetSession = {
     Chatbot,
     NotificationBell,
     TeacherProfileSettingsComponent,
+    ReclamationsPanelComponent,
   ],
   templateUrl: './student-dashboard.html',
   styleUrl: './student-dashboard.css',
@@ -419,6 +422,7 @@ export class StudentDashboard implements OnInit, OnDestroy {
     { id: 'flashcards', label: 'Flashcards' },
     { id: 'classement', label: 'Classement' },
     { id: 'stages', label: 'Stages & Opportunites' },
+    { id: 'reclamations', label: 'Reclamations' },
     { id: 'parametres', label: 'Parametres' },
   ];
 

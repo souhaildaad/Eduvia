@@ -366,13 +366,6 @@ export class TeacherProfileSettingsComponent implements OnInit, OnDestroy, After
       return;
     }
 
-    if (this.faceIdEnabled) {
-      this.faceIdMessage = 'Face ID est deja enregistre pour ce compte.';
-      this.faceIdMessageType = 'info';
-      this.announceText(this.faceIdMessage);
-      return;
-    }
-
     this.faceIdMessage = '';
     this.faceIdMessageType = 'info';
     this.faceIdCameraReady = false;
@@ -420,13 +413,6 @@ export class TeacherProfileSettingsComponent implements OnInit, OnDestroy, After
   }
 
   captureFaceId() {
-    if (this.faceIdEnabled) {
-      this.faceIdMessage = 'Face ID est deja enregistre pour ce compte.';
-      this.faceIdMessageType = 'info';
-      this.announceText(this.faceIdMessage);
-      return;
-    }
-
     this.faceIdMessage = "Verification du Face ID en cours...";
     this.faceIdMessageType = 'info';
     this.screenReaderMessage = this.faceIdMessage;
@@ -1010,7 +996,7 @@ export class TeacherProfileSettingsComponent implements OnInit, OnDestroy, After
 
     const average = grayscale.reduce((sum, value) => sum + value, 0) / grayscale.length;
     const variance = grayscale.reduce((sum, value) => sum + Math.pow(value - average, 2), 0) / grayscale.length;
-    if (average < 45 || average > 225 || variance < 220) {
+    if (average < 18 || average > 245 || variance < 45) {
       return {
         ok: false,
         message: 'Visage pas assez clair. Reprenez avec une bonne lumiere et le visage complet face a la camera.',

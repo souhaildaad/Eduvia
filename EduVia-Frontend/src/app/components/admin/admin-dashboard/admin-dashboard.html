@@ -70,5 +70,9 @@
     <section *ngIf="selectedTab === 'internships'" class="embedded-panel">
       <app-internship-management></app-internship-management>
     </section>
+
+    <section *ngIf="selectedTab === 'reclamations'" class="embedded-panel">
+      <app-reclamations-panel mode="admin"></app-reclamations-panel>
+    </section>
   </main>
 </div>

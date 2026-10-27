@@ -19,3 +19,4 @@ dist/
 # Heavy duplicate video uploads
 EduVia django/uploads/legacy-backend/
 EduVia django/uploads/*.mp4
+

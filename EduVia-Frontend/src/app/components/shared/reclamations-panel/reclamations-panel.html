@@ -1,0 +1,282 @@
+<section class="reclamations-shell">
+  <!-- Header -->
+  <header class="reclamations-header">
+    <div>
+      <span class="reclamations-kicker">
+        {{ mode === 'admin' ? 'ADMINISTRATION EDUVIA' : (mode === 'teacher' ? 'ESPACE ENSEIGNANT' : 'ESPACE ÉTUDIANT') }}
+      </span>
+      <h2>
+        {{ mode === 'admin' ? 'Gestion des Réclamations (Étudiants & Enseignants)' : 'Mes Réclamations & Support' }}
+      </h2>
+      <p>
+        {{
+          mode === 'admin'
+            ? 'Consultez, filtrez, répondez et mettez à jour le statut des réclamations envoyées par les étudiants et les enseignants.'
+            : 'Soumettez une réclamation technique ou pédagogique et suivez en temps réel la réponse de l’administration.'
+        }}
+      </p>
+    </div>
+    <button type="button" class="rec-refresh-btn" (click)="loadReclamations()" [disabled]="isLoading">
+      <mat-icon>refresh</mat-icon>
+      <span>Actualiser</span>
+    </button>
+  </header>
+
+  <!-- Feedback Banner -->
+  <div
+    *ngIf="feedbackMessage"
+    class="rec-feedback"
+    [class.rec-feedback--success]="feedbackType === 'success'"
+    [class.rec-feedback--error]="feedbackType === 'error'">
+    <mat-icon>{{ feedbackType === 'success' ? 'check_circle' : 'error_outline' }}</mat-icon>
+    <span>{{ feedbackMessage }}</span>
+  </div>
+
+  <!-- KPI Summary Cards -->
+  <div class="rec-kpi-grid">
+    <article class="rec-kpi-card">
+      <span class="rec-kpi-label">Total réclamations</span>
+      <strong class="rec-kpi-value">{{ totalCount }}</strong>
+    </article>
+    <article class="rec-kpi-card rec-kpi-card--pending">
+      <span class="rec-kpi-label">En attente</span>
+      <strong class="rec-kpi-value">{{ pendingCount }}</strong>
+    </article>
+    <article class="rec-kpi-card rec-kpi-card--progress">
+      <span class="rec-kpi-label">En cours</span>
+      <strong class="rec-kpi-value">{{ inProgressCount }}</strong>
+    </article>
+    <article class="rec-kpi-card rec-kpi-card--resolved">
+      <span class="rec-kpi-label">Résolues</span>
+      <strong class="rec-kpi-value">{{ resolvedCount }}</strong>
+    </article>
+    <article class="rec-kpi-card" *ngIf="mode === 'admin'">
+      <span class="rec-kpi-label">Étudiants / Enseignants</span>
+      <strong class="rec-kpi-value">{{ studentsCount }} / {{ teachersCount }}</strong>
+    </article>
+  </div>
+
+  <div class="rec-layout" [class.rec-layout--admin]="mode === 'admin'">
+    <!-- Student / Teacher Creation & Edit Form -->
+    <aside class="rec-form-card" *ngIf="mode !== 'admin'">
+      <h3>
+        <mat-icon>{{ editingId ? 'edit_note' : 'add_comment' }}</mat-icon>
+        {{ editingId ? 'Modifier la réclamation' : 'Nouvelle réclamation' }}
+      </h3>
+
+      <div class="rec-field">
+        <label>Sujet de la réclamation *</label>
+        <input
+          type="text"
+          [(ngModel)]="subject"
+          placeholder="Ex: Problème d'affichage d'un quiz, accès au cours..." />
+      </div>
+
+      <div class="rec-field-row">
+        <div class="rec-field">
+          <label>Catégorie</label>
+          <select [(ngModel)]="category">
+            <option *ngFor="let cat of categories" [value]="cat">{{ cat }}</option>
+          </select>
+        </div>
+        <div class="rec-field">
+          <label>Priorité</label>
+          <select [(ngModel)]="priority">
+            <option *ngFor="let prio of priorities" [value]="prio">{{ prio }}</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="rec-field">
+        <label>Description détaillée *</label>
+        <textarea
+          rows="5"
+          [(ngModel)]="message"
+          placeholder="Expliquez votre problème ou votre demande en détail..."></textarea>
+      </div>
+
+      <div class="rec-form-actions">
+        <button
+          type="button"
+          class="rec-submit-btn"
+          (click)="submitReclamation()"
+          [disabled]="isSubmitting">
+          <mat-icon>{{ editingId ? 'save' : 'send' }}</mat-icon>
+          <span>{{ isSubmitting ? 'Envoi...' : (editingId ? 'Mettre à jour' : 'Envoyer la réclamation') }}</span>
+        </button>
+        <button
+          *ngIf="editingId"
+          type="button"
+          class="rec-cancel-btn"
+          (click)="resetForm()">
+          Annuler
+        </button>
+      </div>
+    </aside>
+
+    <!-- List & Filters -->
+    <div class="rec-list-section">
+      <div class="rec-filters-bar">
+        <div class="rec-search-box">
+          <mat-icon>search</mat-icon>
+          <input
+            type="text"
+            [(ngModel)]="searchQuery"
+            placeholder="Rechercher par sujet, message, nom, email..." />
+        </div>
+
+        <div class="rec-filter-Selects">
+          <select *ngIf="mode === 'admin'" [(ngModel)]="roleFilter" aria-label="Filtrer par rôle">
+            <option value="ALL">Tous les profils</option>
+            <option value="student">Étudiants</option>
+            <option value="teacher">Enseignants</option>
+          </select>
+
+          <select [(ngModel)]="statusFilter" aria-label="Filtrer par statut">
+            <option value="ALL">Tous les statuts</option>
+            <option *ngFor="let st of statuses" [value]="st">{{ st }}</option>
+          </select>
+
+          <select [(ngModel)]="priorityFilter" aria-label="Filtrer par priorité">
+            <option value="ALL">Toutes les priorités</option>
+            <option *ngFor="let p of priorities" [value]="p">{{ p }}</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="rec-empty" *ngIf="!isLoading && filteredReclamations.length === 0">
+        <mat-icon>inbox</mat-icon>
+        <h4>Aucune réclamation trouvée</h4>
+        <p>
+          {{
+            mode === 'admin'
+              ? 'Aucune réclamation ne correspond aux filtres sélectionnés.'
+              : "Vous n'avez pas encore soumis de réclamation."
+          }}
+        </p>
+      </div>
+
+      <div class="rec-cards-list" *ngIf="filteredReclamations.length > 0">
+        <article class="rec-item-card" *ngFor="let item of filteredReclamations">
+          <div class="rec-item-top">
+            <div class="rec-badges">
+              <span
+                class="rec-role-badge"
+                *ngIf="mode === 'admin'"
+                [class.rec-role-badge--teacher]="item.authorRole === 'teacher'">
+                {{ item.authorRole === 'teacher' ? 'Enseignant' : 'Étudiant' }}
+              </span>
+              <span class="rec-category-badge">{{ item.category }}</span>
+              <span
+                class="rec-priority-badge"
+                [class.rec-priority--high]="item.priority === 'Haute' || item.priority === 'Urgente'"
+                [class.rec-priority--low]="item.priority === 'Basse'">
+                Priorité : {{ item.priority }}
+              </span>
+            </div>
+
+            <span
+              class="rec-status-pill"
+              [class.rec-status--pending]="item.status === 'En attente'"
+              [class.rec-status--progress]="item.status === 'En cours'"
+              [class.rec-status--resolved]="item.status === 'Résolue'"
+              [class.rec-status--rejected]="item.status === 'Rejetée'">
+              {{ item.status }}
+            </span>
+          </div>
+
+          <h4 class="rec-item-title">{{ item.subject }}</h4>
+
+          <div class="rec-item-author" *ngIf="mode === 'admin'">
+            <span><strong>Par :</strong> {{ item.authorName || item.authorEmail }}</span>
+            <span><strong>Email :</strong> {{ item.authorEmail }}</span>
+            <span *ngIf="item.authorClass"><strong>Classe :</strong> {{ item.authorClass }}</span>
+            <span><strong>Date :</strong> {{ item.createdAt | date:'dd/MM/yyyy HH:mm' }}</span>
+          </div>
+
+          <div class="rec-item-author" *ngIf="mode !== 'admin'">
+            <span><strong>Envoyée le :</strong> {{ item.createdAt | date:'dd/MM/yyyy à HH:mm' }}</span>
+          </div>
+
+          <p class="rec-item-message">{{ item.message }}</p>
+
+          <!-- Admin Response Display for Student/Teacher -->
+          <div class="rec-admin-reply-box" *ngIf="mode !== 'admin' && item.adminResponse">
+            <div class="rec-admin-reply-header">
+              <mat-icon>verified_user</mat-icon>
+              <strong>Réponse de l'administration</strong>
+              <span *ngIf="item.respondedAt">({{ item.respondedAt | date:'dd/MM/yyyy HH:mm' }})</span>
+            </div>
+            <p>{{ item.adminResponse }}</p>
+          </div>
+
+          <!-- Student/Teacher Actions -->
+          <div class="rec-item-footer" *ngIf="mode !== 'admin'">
+            <button
+              *ngIf="item.status === 'En attente'"
+              type="button"
+              class="rec-action-btn"
+              (click)="startEdit(item)">
+              <mat-icon>edit</mat-icon>
+              <span>Modifier</span>
+            </button>
+            <button
+              type="button"
+              class="rec-action-btn rec-action-btn--danger"
+              (click)="deleteReclamation(item)">
+              <mat-icon>delete_outline</mat-icon>
+              <span>Supprimer</span>
+            </button>
+          </div>
+
+          <!-- Admin Management Controls -->
+          <div class="rec-admin-controls" *ngIf="mode === 'admin' && adminDrafts[item.id]">
+            <div class="rec-admin-controls-row">
+              <div class="rec-field">
+                <label>Statut de traitement</label>
+                <select [(ngModel)]="adminDrafts[item.id].status">
+                  <option *ngFor="let st of statuses" [value]="st">{{ st }}</option>
+                </select>
+              </div>
+              <div class="rec-field rec-field--grow">
+                <label>Réponse de l'administration (visible par l'auteur)</label>
+                <textarea
+                  rows="2"
+                  [(ngModel)]="adminDrafts[item.id].adminResponse"
+                  placeholder="Écrivez une réponse ou une résolution pour l'étudiant / l'enseignant..."></textarea>
+              </div>
+            </div>
+
+            <div class="rec-admin-actions">
+              <button
+                type="button"
+                class="rec-submit-btn"
+                (click)="saveAdminDecision(item)"
+                [disabled]="adminDrafts[item.id].saving">
+                <mat-icon>save</mat-icon>
+                <span>{{ adminDrafts[item.id].saving ? 'Enregistrement...' : 'Enregistrer la réponse' }}</span>
+              </button>
+              <button
+                *ngIf="item.status !== 'Résolue'"
+                type="button"
+                class="rec-resolve-btn"
+                (click)="saveAdminDecision(item, 'Résolue')"
+                [disabled]="adminDrafts[item.id].saving">
+                <mat-icon>check_circle</mat-icon>
+                <span>Marquer Résolue</span>
+              </button>
+              <button
+                type="button"
+                class="rec-action-btn rec-action-btn--danger"
+                (click)="deleteReclamation(item)">
+                <mat-icon>delete_outline</mat-icon>
+                <span>Supprimer</span>
+              </button>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </div>
+</section>
+

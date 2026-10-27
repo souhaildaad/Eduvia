@@ -470,9 +470,32 @@ export class AppComponent implements OnInit, OnDestroy {
     }
 
     const localResult = localStorage.getItem(this.assessmentStorageKey(email));
+    if (!currentUser) {
+      if (localResult) {
+        this.studentNeedsAssessment.set(false);
+      }
+      return;
+    }
+
+    const userLevel = String(currentUser?.level || currentUser?.profileData?.level || '').trim();
+    if (userLevel === 'debutant' || userLevel === 'intermediaire' || userLevel === 'avance') {
+      this.studentAssessmentLevel.set(userLevel);
+      localStorage.setItem(this.studentLevelStorageKey(email), userLevel);
+    }
+
     const completedFromUser =
+      currentUser?.initialAssessmentCompleted === true ||
       currentUser?.profileData?.initialAssessmentCompleted === true ||
-      currentUser?.profileData?.initialAssessment;
+      Boolean(currentUser?.profileData?.initialAssessment) ||
+      Boolean(userLevel) ||
+      Boolean(currentUser?.firstLoginAt);
+
+    if (completedFromUser && email) {
+      localStorage.setItem(
+        this.assessmentStorageKey(email),
+        JSON.stringify({ completedAt: new Date().toISOString(), level: userLevel || this.studentAssessmentLevel() }),
+      );
+    }
     this.studentNeedsAssessment.set(!localResult && !completedFromUser);
   }
 
@@ -491,17 +514,25 @@ export class AppComponent implements OnInit, OnDestroy {
         const className = this.resolveStudentClassName(profile);
         localStorage.setItem('current_user_class', className);
         const email = (localStorage.getItem('current_user_email') || String(profile?.email || '')).trim().toLowerCase();
-        const profileLevel = profile?.level;
+        const profileLevel = String(profile?.level || profile?.profileData?.level || '').trim();
         if (profileLevel === 'debutant' || profileLevel === 'intermediaire' || profileLevel === 'avance') {
           this.studentAssessmentLevel.set(profileLevel);
           localStorage.setItem(this.studentLevelStorageKey(email), profileLevel);
         }
-        if (profile?.initialAssessmentCompleted === true || profile?.initialAssessment) {
+        const completed =
+          profile?.initialAssessmentCompleted === true ||
+          profile?.profileData?.initialAssessmentCompleted === true ||
+          Boolean(profile?.initialAssessment) ||
+          Boolean(profileLevel) ||
+          Boolean(profile?.firstLoginAt);
+        if (completed) {
           localStorage.setItem(
             this.assessmentStorageKey(email),
             JSON.stringify(profile.initialAssessment || { completedAt: new Date().toISOString(), level: this.studentAssessmentLevel() }),
           );
           this.studentNeedsAssessment.set(false);
+        } else if (!localStorage.getItem(this.assessmentStorageKey(email))) {
+          this.studentNeedsAssessment.set(true);
         }
       },
       error: () => {

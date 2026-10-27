@@ -451,13 +451,13 @@
         </div>
 
         <div class="security-actions face-id-actions">
-          <button type="button" class="confirm-security-button" (click)="startFaceIdCamera()" [disabled]="faceIdEnabled || faceIdCameraActive">
+          <button type="button" class="confirm-security-button" (click)="startFaceIdCamera()" [disabled]="faceIdCameraActive">
             <mat-icon>photo_camera</mat-icon>
-            Ouvrir la camera
+            {{ faceIdEnabled ? 'Mettre a jour avec la camera' : 'Ouvrir la camera' }}
           </button>
-          <button type="button" class="confirm-security-button" (click)="captureFaceId()" [disabled]="faceIdEnabled || !faceIdCameraReady || faceIdLoading">
+          <button type="button" class="confirm-security-button" (click)="captureFaceId()" [disabled]="!faceIdCameraReady || faceIdLoading">
             <mat-icon>verified_user</mat-icon>
-            {{ faceIdLoading ? 'Enregistrement...' : 'Enregistrer Face ID' }}
+            {{ faceIdLoading ? 'Enregistrement...' : (faceIdEnabled ? 'Mettre a jour Face ID' : 'Enregistrer Face ID') }}
           </button>
           <button type="button" class="verify-password-button" (click)="stopFaceIdCamera()" [disabled]="!faceIdCameraActive">
             <mat-icon>close</mat-icon>
