@@ -74,7 +74,7 @@
 
       <div class="rec-field-row">
         <div class="rec-field">
-          <label>Catégorie</label>
+          <label>Type de réclamation</label>
           <select [(ngModel)]="category">
             <option *ngFor="let cat of categories" [value]="cat">{{ cat }}</option>
           </select>
@@ -85,6 +85,14 @@
             <option *ngFor="let prio of priorities" [value]="prio">{{ prio }}</option>
           </select>
         </div>
+      </div>
+
+      <div class="rec-field" *ngIf="category === 'Autre'">
+        <label>Créer le type de réclamation *</label>
+        <input
+          type="text"
+          [(ngModel)]="customCategory"
+          placeholder="Saisissez votre type de réclamation (ex: Stage, Certificat, Examen...)" />
       </div>
 
       <div class="rec-field">

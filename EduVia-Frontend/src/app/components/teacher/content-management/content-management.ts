@@ -1506,6 +1506,8 @@ export class ContentManagement implements OnInit {
       this.clearQuizFieldError('quizFile');
       this.contentForm.quizFile = file;
       this.contentForm.quizFileName = file.name;
+      this.editableQuizQuestions = [];
+      this.pendingGeneratedQuizQuestions = null;
     }
   }
 
@@ -1517,6 +1519,8 @@ export class ContentManagement implements OnInit {
       this.contentForm.quizChapterFiles = [];
       this.contentForm.quizChapterFileNames = [];
       this.contentForm.quizSourceChapter = '';
+      this.editableQuizQuestions = [];
+      this.pendingGeneratedQuizQuestions = null;
       return;
     }
 
@@ -1538,6 +1542,8 @@ export class ContentManagement implements OnInit {
     this.contentForm.quizChapterFiles = files;
     this.contentForm.quizChapterFileNames = files.map(file => file.name);
     this.contentForm.quizSourceChapter = files[0].name.replace(/\.[^.]+$/, '');
+    this.editableQuizQuestions = [];
+    this.pendingGeneratedQuizQuestions = null;
   }
 
   addEditableQuizQuestion() {
@@ -1823,6 +1829,42 @@ export class ContentManagement implements OnInit {
       !this.pendingGeneratedQuizQuestions &&
       !this.hasEditableQuizQuestions() &&
       (shouldCreateQuiz || this.creationMode === 'quiz_only');
+
+    const shouldParseExistingQuizForCreation =
+      this.contentForm.quizMode === 'existing' &&
+      !!this.contentForm.quizFile &&
+      !this.pendingGeneratedQuizQuestions &&
+      !this.hasEditableQuizQuestions() &&
+      (shouldCreateQuiz || this.creationMode === 'quiz_only');
+
+    if (shouldParseExistingQuizForCreation && this.contentForm.quizFile) {
+      if (this.quizGenerationInFlight) {
+        return;
+      }
+      this.quizGenerationInFlight = true;
+      this.requestExistingQuizQuestions(this.contentForm.quizFile).subscribe({
+        next: questions => {
+          this.scheduleUiUpdate(() => {
+            this.pendingGeneratedQuizQuestions = questions;
+            this.editableQuizQuestions = this.cloneQuizQuestions(questions);
+            this.syncQuizQuestionCountFromEditor();
+            this.quizGenerationInFlight = false;
+            this.saveWizard();
+          });
+        },
+        error: error => {
+          this.scheduleUiUpdate(() => {
+            this.quizGenerationInFlight = false;
+            this.isSaving = false;
+            this.formError = this.resolveContentErrorMessage(
+              error,
+              "L'extraction du quiz existant a echoue.",
+            );
+          });
+        },
+      });
+      return;
+    }
 
     const shouldGenerateQuizViaApi =
       shouldRegenerateQuizQuestions || shouldGenerateQuizForCreation;
@@ -4329,7 +4371,10 @@ export class ContentManagement implements OnInit {
   private requestExistingQuizQuestions(file: File) {
     const formData = new FormData();
     formData.append('quizFile', file);
-    const requestedCount = Math.max(1, Number(this.contentForm.quizQuestions) || 5);
+    formData.append('questionCount', String(Math.max(1, Number(this.contentForm.quizQuestions) || 10)));
+    formData.append('title', this.contentForm.quizTitle || file.name);
+    formData.append('description', this.contentForm.quizDescription || '');
+    const requestedCount = Math.max(1, Number(this.contentForm.quizQuestions) || 10);
     const sourceLabel = file?.name?.replace(/\.[^.]+$/, '') || this.contentForm.quizTitle || 'Quiz';
 
     return this.http

@@ -47,10 +47,11 @@ export class ReclamationsPanelComponent implements OnInit {
   editingId: string | null = null;
   subject = '';
   category = 'Pédagogique / Cours';
+  customCategory = '';
   priority: 'Basse' | 'Moyenne' | 'Haute' | 'Urgente' = 'Moyenne';
   message = '';
 
-  readonly categories = [
+  categories: string[] = [
     'Pédagogique / Cours',
     'Quiz & Évaluation',
     'Technique / Plateforme',
@@ -109,6 +110,14 @@ export class ReclamationsPanelComponent implements OnInit {
           authorRole: item.authorRole || 'student',
         }));
         for (const rec of this.reclamations) {
+          if (rec.category && !this.categories.includes(rec.category)) {
+            const autreIdx = this.categories.indexOf('Autre');
+            if (autreIdx >= 0) {
+              this.categories.splice(autreIdx, 0, rec.category);
+            } else {
+              this.categories.push(rec.category);
+            }
+          }
           if (!this.adminDrafts[rec.id]) {
             this.adminDrafts[rec.id] = {
               status: rec.status,
@@ -190,15 +199,30 @@ export class ReclamationsPanelComponent implements OnInit {
   submitReclamation(): void {
     const trimmedSubject = this.subject.trim();
     const trimmedMessage = this.message.trim();
+    const trimmedCustomCategory = this.customCategory.trim();
     if (!trimmedSubject || !trimmedMessage) {
       this.showFeedback('Veuillez renseigner le sujet et la description de votre réclamation.', 'error');
       return;
+    }
+    if (this.category === 'Autre' && !trimmedCustomCategory) {
+      this.showFeedback('Veuillez créer / préciser le type de réclamation pour « Autre ».', 'error');
+      return;
+    }
+
+    const finalCategory = this.category === 'Autre' ? trimmedCustomCategory : this.category;
+    if (finalCategory && !this.categories.includes(finalCategory)) {
+      const autreIdx = this.categories.indexOf('Autre');
+      if (autreIdx >= 0) {
+        this.categories.splice(autreIdx, 0, finalCategory);
+      } else {
+        this.categories.push(finalCategory);
+      }
     }
 
     this.isSubmitting = true;
     const payload = {
       subject: trimmedSubject,
-      category: this.category,
+      category: finalCategory,
       priority: this.priority,
       message: trimmedMessage,
     };
@@ -237,7 +261,20 @@ export class ReclamationsPanelComponent implements OnInit {
     }
     this.editingId = item.id;
     this.subject = item.subject;
-    this.category = item.category;
+    const defaultCats = [
+      'Pédagogique / Cours',
+      'Quiz & Évaluation',
+      'Technique / Plateforme',
+      'Compte & Accès',
+      'Planning / Rappels',
+    ];
+    if (defaultCats.includes(item.category)) {
+      this.category = item.category;
+      this.customCategory = '';
+    } else {
+      this.category = 'Autre';
+      this.customCategory = item.category;
+    }
     this.priority = item.priority;
     this.message = item.message;
   }
@@ -246,6 +283,7 @@ export class ReclamationsPanelComponent implements OnInit {
     this.editingId = null;
     this.subject = '';
     this.category = 'Pédagogique / Cours';
+    this.customCategory = '';
     this.priority = 'Moyenne';
     this.message = '';
   }

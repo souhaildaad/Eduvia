@@ -205,19 +205,22 @@ background: linear-gradient(90deg, #e51243 0%, #f04b6d 100%);
 }
 .student-tabs {
 display: flex;
-justify-content: start;
-gap: 0.7rem;
-width: fit-content;
+flex-wrap: nowrap;
+align-items: center;
+justify-content: space-between;
+gap: 0.2rem;
+width: 100%;
 max-width: 100%;
-overflow-x: auto;
+overflow: hidden;
 white-space: nowrap;
-padding: 0.45rem;
+padding: 0.35rem 0.45rem;
 margin-bottom: 1.5rem;
 margin-inline: 0 auto;
 border-radius: 999px;
 background: #e8e9f0;
 border: none;
 box-shadow: none;
+box-sizing: border-box;
 }
 
 .catalog-level-chip {
@@ -225,24 +228,27 @@ margin-left: auto;
 align-self: center;
 display: inline-flex;
 align-items: center;
-min-height: 2.45rem;
-padding: 0 1rem;
+min-height: 2.15rem;
+padding: 0 0.65rem;
 border-radius: 999px;
 background: #ef234f;
 color: #ffffff;
-font-weight: 950;
+font-size: 0.74rem;
+font-weight: 900;
+flex-shrink: 0;
 }
 .student-tab {
-flex: 0 0 auto;
+flex: 1 1 auto;
 min-width: 0;
-min-height: 3.15rem;
-padding: 0.75rem 1.15rem;
+min-height: 2.45rem;
+padding: 0.4rem 0.48rem;
 border: 0;
-border-radius: 1.05rem;
+border-radius: 0.9rem;
 background: transparent;
 color: var(--text);
-font-size: 0.95rem;
+font-size: clamp(0.7rem, 0.76vw, 0.81rem);
 font-weight: 800;
+text-align: center;
 cursor: pointer;
 transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }

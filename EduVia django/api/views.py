@@ -1,12 +1,15 @@
+import html
 import io
 import json
 import logging
 import os
 import re
+import time as _time
 import unicodedata
 import urllib.request
 import uuid
 import zipfile
+import zlib
 from urllib.parse import urlencode
 from datetime import date, datetime, time, timedelta
 from django.core.files.storage import default_storage
@@ -28,6 +31,34 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 _LEGACY_USERS_SYNCED = False
+_USER_CACHE = {}  # uid -> (expires_at, user_obj)
+_INITIAL_ASSESSMENT_CACHE = {}  # uid -> (expires_at, bool)
+_CONTENTS_CACHE = {'expires_at': 0.0, 'records': None}
+
+
+def _invalidate_caches(collection=None, user_id=None):
+    if user_id is not None:
+        uid = str(user_id)
+        _USER_CACHE.pop(uid, None)
+        _INITIAL_ASSESSMENT_CACHE.pop(uid, None)
+    else:
+        _USER_CACHE.clear()
+        _INITIAL_ASSESSMENT_CACHE.clear()
+    if collection in (None, 'contents'):
+        _CONTENTS_CACHE['expires_at'] = 0.0
+        _CONTENTS_CACHE['records'] = None
+    if collection in ('student/assessment', 'student/progress'):
+        _INITIAL_ASSESSMENT_CACHE.clear()
+
+
+def _cached_contents_records():
+    now = _time.monotonic()
+    if _CONTENTS_CACHE['records'] is not None and now < _CONTENTS_CACHE['expires_at']:
+        return _CONTENTS_CACHE['records']
+    records = list(Resource.objects.filter(collection='contents'))
+    _CONTENTS_CACHE['records'] = records
+    _CONTENTS_CACHE['expires_at'] = now + 25.0
+    return records
 
 FRENCH_MONTHS = (
     '', 'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
@@ -59,7 +90,17 @@ def _user(request):
     if header.lower().startswith('bearer '):
         try:
             data = signing.loads(header[7:], salt='eduvia-api', max_age=60 * 60 * 24 * 14)
-            return User.objects.filter(pk=data.get('uid'), is_active=True).first()
+            uid = str(data.get('uid') or '')
+            if not uid:
+                return None
+            now = _time.monotonic()
+            cached = _USER_CACHE.get(uid)
+            if cached and now < cached[0]:
+                return cached[1]
+            user_obj = User.objects.filter(pk=uid, is_active=True).first()
+            if user_obj:
+                _USER_CACHE[uid] = (now + 45.0, user_obj)
+            return user_obj
         except (signing.BadSignature, TypeError, ValueError):
             return None
     return request.user if request.user.is_authenticated else None
@@ -69,11 +110,22 @@ def _profile(user, check_resources=True):
     role = 'admin' if user.is_superuser else user.user_role
     initial_completed = True
     if role == 'student':
-        initial_completed = bool(
-            str(user.level or '').strip()
-            or user.first_login_at is not None
-            or (check_resources and Resource.objects.filter(collection__in=('student/assessment', 'student/progress'), owner=user).exists())
-        )
+        uid = str(user.pk)
+        has_direct_flag = bool(str(user.level or '').strip() or user.first_login_at is not None)
+        if has_direct_flag:
+            initial_completed = True
+        elif check_resources:
+            now = _time.monotonic()
+            cached_init = _INITIAL_ASSESSMENT_CACHE.get(uid)
+            if cached_init and now < cached_init[0]:
+                initial_completed = cached_init[1]
+            else:
+                initial_completed = Resource.objects.filter(
+                    collection__in=('student/assessment', 'student/progress'), owner=user
+                ).exists()
+                _INITIAL_ASSESSMENT_CACHE[uid] = (now + 60.0, initial_completed)
+        else:
+            initial_completed = False
     face_enabled = bool(str(user.face_hash or '').strip())
     return {'id': str(user.pk), '_id': str(user.pk), 'userId': str(user.pk), 'email': user.email,
             'username': user.username, 'fullName': user.get_full_name() or user.username,
@@ -129,6 +181,7 @@ def _save_record(collection, data, user=None, public_id=None):
     payload = {k: v for k, v in data.items() if k not in ('_id', 'id')}
     record, _ = Resource.objects.update_or_create(collection=collection, public_id=public_id,
         defaults={'payload': payload, 'owner': user})
+    _invalidate_caches(collection=collection, user_id=user.pk if user else None)
     return record
 
 
@@ -1220,6 +1273,52 @@ def _teacher_exam_reminders(teacher, requested_class=''):
     }
 
 
+def _extract_pdf_text_fallback(raw_bytes):
+    """Extract text from PDF bytes using pypdf when installed, with a pure-Python zlib stream fallback."""
+    try:
+        from pypdf import PdfReader  # type: ignore
+        reader = PdfReader(io.BytesIO(raw_bytes))
+        pages_text = []
+        for page in reader.pages:
+            page_txt = page.extract_text() or ''
+            if page_txt.strip():
+                pages_text.append(page_txt.strip())
+        if pages_text:
+            return '\n'.join(pages_text)
+    except Exception:
+        pass
+
+    chunks = []
+    for match in re.finditer(rb'stream[\r\n]+(.*?)[\r\n]+endstream', raw_bytes, re.S):
+        stream_data = match.group(1)
+        for wbits in (zlib.MAX_WBITS, -zlib.MAX_WBITS):
+            try:
+                decompressed = zlib.decompress(stream_data, wbits)
+                text_stream = decompressed.decode('latin-1', errors='ignore')
+                parts = []
+                for token in re.findall(r'\((?:\\.|[^\\()])*\)|\[(?:\\.|[^\[\]])*\]', text_stream):
+                    for lit in re.findall(r'\((?:\\.|[^\\()])*\)', token):
+                        inner = lit[1:-1]
+                        inner = (
+                            inner.replace(r'\n', '\n')
+                            .replace(r'\r', ' ')
+                            .replace(r'\t', ' ')
+                            .replace(r'\(', '(')
+                            .replace(r'\)', ')')
+                            .replace(r'\\', '\\')
+                        )
+                        if inner.strip():
+                            parts.append(inner)
+                if parts:
+                    chunks.append(' '.join(parts))
+                break
+            except Exception:
+                continue
+    if chunks:
+        return '\n'.join(chunks)[:25000]
+    return ''
+
+
 def _extract_uploaded_file_text(upload):
     if not upload:
         return ''
@@ -1232,27 +1331,37 @@ def _extract_uploaded_file_text(upload):
     if not raw_bytes:
         return ''
     ext = os.path.splitext(getattr(upload, 'name', '') or '')[1].lower()
-    if ext == '.docx':
+    if ext == '.docx' or raw_bytes[:2] == b'PK':
         try:
             with zipfile.ZipFile(io.BytesIO(raw_bytes)) as archive:
                 if 'word/document.xml' in archive.namelist():
                     xml_data = archive.read('word/document.xml').decode('utf-8', errors='ignore')
                     xml_data = re.sub(r'</w:p>', '\n', xml_data)
-                    text = re.sub(r'<[^>]+>', ' ', xml_data)
-                    return re.sub(r'[ \t]+', ' ', text).strip()
+                    xml_data = re.sub(r'<w:br[^>]*/?>', '\n', xml_data)
+                    xml_data = re.sub(r'<w:tab[^>]*/?>', ' ', xml_data)
+                    text = re.sub(r'<[^>]+>', '', xml_data)
+                    text = html.unescape(text)
+                    lines = [re.sub(r'[ \t]+', ' ', ln).strip() for ln in text.splitlines()]
+                    cleaned_docx = '\n'.join(ln for ln in lines if ln)
+                    if cleaned_docx:
+                        return cleaned_docx
         except Exception:
             pass
+    if ext == '.pdf' or raw_bytes[:4] == b'%PDF':
+        pdf_text = _extract_pdf_text_fallback(raw_bytes)
+        if pdf_text.strip():
+            return pdf_text.strip()
     if ext in ('.txt', '.md', '.csv', '.json'):
         for enc in ('utf-8', 'utf-8-sig', 'cp1252', 'latin-1'):
             try:
                 return raw_bytes.decode(enc)
             except Exception:
                 continue
-    # Fallback text extraction for PDF / DOC / binary files
+    # Fallback text extraction for DOC / binary files
     decoded = raw_bytes.decode('utf-8', errors='ignore')
     fragments = re.findall(r'[A-Za-zÀ-ÿ0-9 ,;:.?!\'\"()\-+/=\n]{8,}', decoded)
     cleaned = '\n'.join(frag.strip() for frag in fragments if len(frag.strip()) >= 8)
-    return cleaned[:15000]
+    return cleaned[:20000]
 
 
 _CURATED_QUIZ_BANK = [
@@ -1367,12 +1476,169 @@ _CURATED_QUIZ_BANK = [
 ]
 
 
+def _normalize_ai_generated_questions(raw_list, count=5):
+    if not isinstance(raw_list, list):
+        return []
+    labels = ['A', 'B', 'C', 'D']
+    normalized = []
+    for item in raw_list:
+        if not isinstance(item, dict):
+            continue
+        prompt = str(item.get('prompt') or item.get('question') or '').strip()
+        raw_opts = item.get('options') or item.get('choices') or []
+        if not prompt or not isinstance(raw_opts, list) or len(raw_opts) < 2:
+            continue
+        opts = []
+        for idx, opt in enumerate(raw_opts[:4]):
+            lbl = labels[idx]
+            if isinstance(opt, dict):
+                txt = str(opt.get('text') or opt.get('label') or '').strip()
+            else:
+                txt = re.sub(r'^[A-Da-d][\)\.\:\-]\s*', '', str(opt or '').strip())
+            if txt:
+                opts.append({'label': lbl, 'text': txt})
+        if len(opts) < 2:
+            continue
+        while len(opts) < 4:
+            lbl = labels[len(opts)]
+            opts.append({'label': lbl, 'text': f'Option {lbl}'})
+        raw_corr = item.get('correctAnswers') or item.get('correctAnswer') or item.get('answer') or ['A']
+        if isinstance(raw_corr, str):
+            raw_corr = re.findall(r'[A-Da-d]', raw_corr) or [raw_corr]
+        correct = [str(c).strip().upper()[:1] for c in raw_corr if str(c).strip().upper()[:1] in labels]
+        if not correct:
+            correct = ['A']
+        explanation = str(item.get('explanation') or f"La bonne réponse est {', '.join(correct)}.").strip()
+        normalized.append({
+            'id': f'q-{len(normalized) + 1}',
+            'prompt': prompt,
+            'type': 'multiple' if len(correct) > 1 else 'single',
+            'options': opts,
+            'correctAnswers': correct,
+            'explanation': explanation,
+        })
+        if len(normalized) >= count:
+            break
+    return normalized
+
+
+def _generate_quiz_questions_via_huggingface(title='', description='', difficulty='medium',
+                                             question_count=5, source_chapter='', course_id='',
+                                             source_text=''):
+    """Generate multiple-choice quiz questions using Hugging Face Inference API (with OpenAI-compatible fallback)."""
+    hf_token = (
+        os.environ.get('HUGGINGFACE_API_KEY')
+        or os.environ.get('HF_TOKEN')
+        or os.environ.get('HUGGING_FACE_HUB_TOKEN')
+        or ''
+    ).strip()
+    hf_model = (
+        os.environ.get('HUGGINGFACE_MODEL')
+        or 'Qwen/Qwen2.5-72B-Instruct'
+    ).strip()
+
+    topic = str(source_chapter or title or course_id or 'Cours').strip()
+    excerpt = str(source_text or description or '').strip()[:6500]
+    if not excerpt and not topic:
+        return []
+
+    system_prompt = (
+        "Tu es un professeur expert qui conçoit des QCM pédagogiques en français. "
+        "Réponds UNIQUEMENT avec un tableau JSON valide contenant les questions, sans aucun texte autour."
+    )
+    user_prompt = (
+        f"Génère exactement {question_count} questions QCM (niveau : {difficulty}) en français "
+        f"sur le sujet « {topic} »"
+        + (f" ({description})" if description else "")
+        + ".\n"
+        + (f"Contenu source du chapitre :\n\"\"\"\n{excerpt}\n\"\"\"\n" if excerpt else "")
+        + "Format JSON strict attendu :\n"
+        '[{"prompt":"Question ?","options":[{"label":"A","text":"..."},{"label":"B","text":"..."},'
+        '{"label":"C","text":"..."},{"label":"D","text":"..."}],"correctAnswers":["A"],'
+        '"explanation":"Explication courte et claire."}]'
+    )
+
+    endpoints = []
+    if hf_token:
+        endpoints.extend([
+            (
+                'https://router.huggingface.co/v1/chat/completions',
+                {'Authorization': f'Bearer {hf_token}', 'Content-Type': 'application/json'},
+                {'model': hf_model, 'messages': [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}], 'temperature': 0.3, 'max_tokens': 2600},
+            ),
+            (
+                f'https://api-inference.huggingface.co/models/{hf_model}/v1/chat/completions',
+                {'Authorization': f'Bearer {hf_token}', 'Content-Type': 'application/json'},
+                {'model': hf_model, 'messages': [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}], 'temperature': 0.3, 'max_tokens': 2600},
+            ),
+        ])
+    # Zero-key OpenAI-compatible inference fallback so automatic generation works out-of-the-box
+    endpoints.append((
+        'https://text.pollinations.ai/openai',
+        {'Content-Type': 'application/json'},
+        {'model': 'openai', 'messages': [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}], 'temperature': 0.3},
+    ))
+
+    for url, headers, payload in endpoints:
+        try:
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode('utf-8'),
+                headers={**headers, 'User-Agent': 'EduVia-QuizGenerator/1.0'},
+                method='POST',
+            )
+            with urllib.request.urlopen(req, timeout=14) as resp:
+                raw_resp = resp.read().decode('utf-8', errors='ignore')
+            data = json.loads(raw_resp)
+            content = ''
+            if isinstance(data, dict) and data.get('choices'):
+                content = str(data['choices'][0].get('message', {}).get('content') or '')
+            elif isinstance(data, list) and data and isinstance(data[0], dict):
+                content = str(data[0].get('generated_text') or '')
+            if not content:
+                continue
+            json_match = re.search(r'\[.*\]', content, re.S)
+            if json_match:
+                parsed_list = json.loads(json_match.group(0))
+                questions = _normalize_ai_generated_questions(parsed_list, count=question_count)
+                if len(questions) >= min(2, question_count):
+                    return questions
+        except Exception:
+            continue
+    return []
+
+
 def _generate_quiz_questions(title='', description='', difficulty='medium', question_count=5,
                              source_chapter='', course_id='', chapter_id='', source_text=''):
     try:
         count = max(1, min(int(question_count or 5), 20))
     except (TypeError, ValueError):
         count = 5
+
+    # 1. If the uploaded file itself already contains structured QCM questions, return them first
+    if source_text and re.search(r'(?:^|\n)\s*[A-Da-d][\)\.\:\-]\s+\S+', source_text):
+        direct_parsed = _parse_quiz_questions_from_text(
+            source_text,
+            fallback_title=title,
+            fallback_course=course_id,
+            count=count,
+            allow_fallback=False,
+        )
+        if len(direct_parsed) >= min(3, count):
+            return direct_parsed[:count]
+
+    # 2. Try Hugging Face Inference API (and OpenAI-compatible LLM endpoint)
+    ai_questions = _generate_quiz_questions_via_huggingface(
+        title=title,
+        description=description,
+        difficulty=difficulty,
+        question_count=count,
+        source_chapter=source_chapter or chapter_id,
+        course_id=course_id,
+        source_text=source_text,
+    )
+    if len(ai_questions) >= count:
+        return ai_questions[:count]
 
     context_blob = ' '.join(filter(None, [title, description, source_chapter, course_id, chapter_id, source_text]))
     query_tokens = set(_tokenize_course_text(context_blob))
@@ -1383,32 +1649,39 @@ def _generate_quiz_questions(title='', description='', difficulty='medium', ques
         scored_bank.append((overlap, -idx, item))
     scored_bank.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
 
-    selected = []
-    used_prompts = set()
+    selected = list(ai_questions)
+    used_prompts = {_normalized_text(q['prompt']) for q in selected}
 
-    # If the teacher provided custom text (from file or description), extract key statements to create custom questions first
+    # 3. Extract key statements from the uploaded chapter text to build contextual QCM questions
     clean_lines = [
         line.strip(' •-*0123456789.)\t')
         for line in re.split(r'[\n.;]+', f'{source_text}\n{description}')
         if 35 <= len(line.strip()) <= 220 and not re.search(r'(http|www\.|@)', line)
     ]
     topic_label = str(source_chapter or chapter_id or title or course_id or 'ce chapitre').strip()
-    for line in clean_lines[:max(0, count // 2)]:
+    labels = ['A', 'B', 'C', 'D']
+    generic_distractors = [
+        "Cette notion n'est jamais utilisée lors de la phase d'analyse ou d'implémentation.",
+        "Le cours indique que cette étape est facultative et ignorée lors de l'exécution.",
+        "Cette règle s'applique uniquement aux commentaires et non à la logique du sujet.",
+    ]
+    for idx, line in enumerate(clean_lines):
+        if len(selected) >= count:
+            break
         norm_line = _normalized_text(line)
         if norm_line in used_prompts:
             continue
         used_prompts.add(norm_line)
+        correct_pos = idx % 4
+        correct_lbl = labels[correct_pos]
+        option_texts = list(generic_distractors)
+        option_texts.insert(correct_pos, line)
         selected.append({
             'id': f'q-{len(selected) + 1}',
-            'prompt': f"Concernant « {topic_label} », quelle proposition correspond exactement au contenu du cours ?",
+            'prompt': f"D'après le chapitre « {topic_label} », quelle affirmation est exacte (Question {len(selected) + 1}) ?",
             'type': 'single',
-            'options': [
-                {'label': 'A', 'text': line},
-                {'label': 'B', 'text': "Cette notion n'est jamais utilisée lors de la phase d'analyse ou d'implémentation."},
-                {'label': 'C', 'text': "Le cours indique que cette étape est facultative et ignorée lors de l'exécution."},
-                {'label': 'D', 'text': "Cette règle s'applique uniquement aux commentaires et non à la logique du sujet."},
-            ],
-            'correctAnswers': ['A'],
+            'options': [{'label': labels[i], 'text': option_texts[i]} for i in range(4)],
+            'correctAnswers': [correct_lbl],
             'explanation': f"D'après le support de cours ({topic_label}) : {line}",
         })
 
@@ -1428,7 +1701,7 @@ def _generate_quiz_questions(title='', description='', difficulty='medium', ques
             'explanation': item['explanation'],
         })
 
-    # If count is still higher than selected (e.g. > 9 questions requested), synthesize additional questions from KB chunks
+    # If count is still higher than selected, synthesize additional questions from KB chunks
     kb_chunks = _load_course_knowledge_chunks()
     for chunk in kb_chunks:
         if len(selected) >= count:
@@ -1457,14 +1730,32 @@ def _generate_quiz_questions(title='', description='', difficulty='medium', ques
     return selected[:count]
 
 
-def _parse_quiz_questions_from_text(raw_text, fallback_title='', fallback_course='', count=5):
+def _parse_quiz_questions_from_text(raw_text, fallback_title='', fallback_course='', count=5, allow_fallback=True):
     text = str(raw_text or '').replace('\r\n', '\n').replace('\r', '\n').strip()
     parsed_questions = []
     if text:
         lines = [line.strip() for line in text.split('\n') if line.strip()]
         current_q = None
+        in_answer_key = False
+        current_answer_key_idx = None
+
+        section_key_pattern = re.compile(
+            r'^(?:partie\s*2\b.*|corrig[eé]\s+et\s+explications.*|corrig[eé]s?\b.*|r[eé]ponses?\s+et\s+explications.*)$',
+            re.I,
+        )
+        ignore_header_pattern = re.compile(
+            r'^(?:partie\s*1\b.*|les\s+bonnes\s+r[eé]ponses\s+sont.*|nom\s*\:.*|\d+\s+questions?\s+[àa]\s+choix\s+multiples.*|quiz\s*[\–\-\:].*)$',
+            re.I,
+        )
+        numbered_answer_pattern = re.compile(
+            r'^(?:question\s*|q\s*)?(\d+)[\)\.\-\:]\s*(?:bonne\s+r[eé]ponse|r[eé]ponse\s+correcte|r[eé]ponse|correct|answer|solution)\s*[\:\-]?\s*([A-Da-d])\b(?:\s*[\.\)\-\:]\s*(.*))?$',
+            re.I,
+        )
         option_pattern = re.compile(r'^([*✓✔]?\s*)([A-Da-d])[\)\.\:\-]\s*(.+)$')
-        answer_pattern = re.compile(r'^(?:bonne\s+r[eé]ponse|r[eé]ponse\s+correcte|r[eé]ponse|correct|answer|solution)\s*[\:\-]?\s*([A-Da-d](?:\s*[,\s]\s*[A-Da-d])*)\b', re.I)
+        answer_pattern = re.compile(
+            r'^(?:bonne\s+r[eé]ponse|r[eé]ponse\s+correcte|r[eé]ponse|correct|answer|solution)\s*[\:\-]?\s*([A-Da-d](?:\s*[,\s]\s*[A-Da-d])*)\b(?:\s*[\.\)\-\:]\s*(.*))?$',
+            re.I,
+        )
         explanation_pattern = re.compile(r'^(?:explication|justification|correction|note)\s*[\:\-]\s*(.+)$', re.I)
         question_start_pattern = re.compile(r'^(?:question\s*\d+|q\s*\d+|\d+[\)\.\-])\s*[\:\-]?\s*(.+)$', re.I)
 
@@ -1489,18 +1780,58 @@ def _parse_quiz_questions_from_text(raw_text, fallback_title='', fallback_course
                 'options': normalized_opts,
                 'correctAnswers': correct,
                 'explanation': q_obj.get('explanation') or f"La bonne réponse est {', '.join(correct)}.",
+                '_has_custom_explanation': bool(q_obj.get('explanation')),
             })
 
         for line in lines:
+            if section_key_pattern.match(line):
+                _flush_question(current_q)
+                current_q = None
+                in_answer_key = True
+                current_answer_key_idx = None
+                continue
+
+            if ignore_header_pattern.match(line):
+                continue
+
+            num_ans_match = numbered_answer_pattern.match(line)
+            if num_ans_match:
+                _flush_question(current_q)
+                current_q = None
+                in_answer_key = True
+                q_num = int(num_ans_match.group(1)) - 1
+                ans_letter = num_ans_match.group(2).upper()
+                if 0 <= q_num < len(parsed_questions):
+                    parsed_questions[q_num]['correctAnswers'] = [ans_letter]
+                    parsed_questions[q_num]['type'] = 'single'
+                    if not parsed_questions[q_num].get('_has_custom_explanation'):
+                        parsed_questions[q_num]['explanation'] = f"La bonne réponse est {ans_letter}."
+                    current_answer_key_idx = q_num
+                continue
+
+            if in_answer_key:
+                exp_match = explanation_pattern.match(line)
+                exp_text = exp_match.group(1).strip() if exp_match else line
+                if current_answer_key_idx is not None and 0 <= current_answer_key_idx < len(parsed_questions):
+                    target_q = parsed_questions[current_answer_key_idx]
+                    if not target_q.get('_has_custom_explanation'):
+                        target_q['explanation'] = exp_text
+                        target_q['_has_custom_explanation'] = True
+                    else:
+                        target_q['explanation'] = f"{target_q['explanation']} {exp_text}".strip()
+                continue
+
             ans_match = answer_pattern.match(line)
             if ans_match and current_q:
                 found = re.findall(r'[A-Da-d]', ans_match.group(1))
                 current_q['correctAnswers'] = [c.upper() for c in found]
                 continue
+
             exp_match = explanation_pattern.match(line)
             if exp_match and current_q:
                 current_q['explanation'] = exp_match.group(1).strip()
                 continue
+
             opt_match = option_pattern.match(line)
             if opt_match:
                 if not current_q:
@@ -1508,13 +1839,14 @@ def _parse_quiz_questions_from_text(raw_text, fallback_title='', fallback_course
                 starred = bool(opt_match.group(1).strip())
                 lbl = opt_match.group(2).upper()
                 opt_text = opt_match.group(3).strip()
-                if opt_text.endswith('*'):
+                if opt_text.endswith('*') or opt_text.endswith('✓') or opt_text.endswith('✔'):
                     starred = True
                     opt_text = opt_text[:-1].strip()
                 current_q['options'].append({'label': lbl, 'text': opt_text})
                 if starred and lbl not in current_q['correctAnswers']:
                     current_q['correctAnswers'].append(lbl)
                 continue
+
             q_match = question_start_pattern.match(line)
             if q_match or (line.endswith('?') and (not current_q or current_q.get('options'))):
                 _flush_question(current_q)
@@ -1522,10 +1854,14 @@ def _parse_quiz_questions_from_text(raw_text, fallback_title='', fallback_course
                 current_q = {'prompt': prompt_text, 'options': [], 'correctAnswers': [], 'explanation': ''}
             elif current_q and not current_q['options']:
                 current_q['prompt'] = f"{current_q['prompt']} {line}".strip()
+            elif current_q and current_q['options']:
+                current_q['options'][-1]['text'] = f"{current_q['options'][-1]['text']} {line}".strip()
 
         _flush_question(current_q)
+        for q_item in parsed_questions:
+            q_item.pop('_has_custom_explanation', None)
 
-    if parsed_questions:
+    if parsed_questions or not allow_fallback:
         return parsed_questions
     return _generate_quiz_questions(
         title=fallback_title,
@@ -1875,23 +2211,33 @@ def _domain_api(request, body, parts, user):
             extension = os.path.splitext(upload.name)[1].lower()
             if extension not in ('.pdf','.doc','.docx','.mp4','.mov','.avi','.webm','.mkv'):
                 return JsonResponse({'success':False,'message':'Format de fichier non autorisé'}, status=400)
+            is_quiz_record = 'quiz' in str(record.payload.get('type') or '').casefold()
+            is_existing_quiz = str(record.payload.get('quizMode') or '').casefold() == 'existing'
             extracted_text = ''
-            if 'quiz' in str(record.payload.get('type') or '').casefold() and not (record.payload.get('quizQuestions') or []):
+            if is_quiz_record and (is_existing_quiz or not (record.payload.get('quizQuestions') or [])):
                 extracted_text = _extract_uploaded_file_text(upload)
             safe_name = re.sub(r'[^a-zA-Z0-9_.-]', '-', os.path.basename(upload.name))
             stored = default_storage.save(f'{uuid.uuid4().hex}-{safe_name}', upload)
             updates = {'fileUrl':'/uploads/'+stored, 'fileName':upload.name}
-            if 'quiz' in str(record.payload.get('type') or '').casefold() and not (record.payload.get('quizQuestions') or []):
-                updates['quizQuestions'] = _parse_quiz_questions_from_text(
+            if is_quiz_record and extracted_text:
+                strict_parsed = _parse_quiz_questions_from_text(
                     extracted_text,
                     fallback_title=str(record.payload.get('title') or upload.name),
                     fallback_course=str(record.payload.get('courseId') or ''),
-                    count=int(record.payload.get('questionCount') or 5),
+                    count=int(record.payload.get('questionCount') or record.payload.get('quizQuestionCount') or 10),
+                    allow_fallback=not bool(record.payload.get('quizQuestions')),
                 )
+                if strict_parsed:
+                    updates['quizQuestions'] = strict_parsed
+                    updates['quizQuestionCount'] = len(strict_parsed)
             record.payload.update(updates)
             record.save(update_fields=['payload','updated_at'])
+            _invalidate_caches(collection='contents')
             return _response({'message':'File uploaded and linked to content','content':_resource_dict(record),'fileUrl':'/uploads/'+stored})
         if len(parts) == 2 and request.method == 'GET':
+            has_filters = any(request.GET.get(k) for k in ('teacherEmail', 'className', 'courseId', 'type'))
+            if not has_filters:
+                return JsonResponse([_resource_dict(r) for r in _cached_contents_records()], safe=False)
             for key in ('teacherEmail', 'className', 'courseId', 'type'):
                 value = request.GET.get(key)
                 if value and key == 'teacherEmail' and user and user.user_role in ('teacher', 'admin') and user.email.casefold() == value.strip().casefold():
@@ -1907,9 +2253,11 @@ def _domain_api(request, body, parts, user):
             course = qs.filter(payload__courseId=parts[3])
             teacher_email = request.GET.get('teacherEmail')
             if teacher_email: course = course.filter(payload__teacherEmail__iexact=teacher_email)
-            deleted, _ = course.delete(); return _response({'deleted':deleted})
+            deleted, _ = course.delete()
+            _invalidate_caches(collection='contents')
+            return _response({'deleted':deleted})
         if len(parts) == 3 and parts[2] in ('dashboard-stats','overview','tree') and request.method == 'GET':
-            contents = [_resource_dict(r) for r in qs]
+            contents = [_resource_dict(r) for r in _cached_contents_records()]
             total_students = 0
             assigned_classes = []
             teacher_email = request.GET.get('teacherEmail', '').strip()
@@ -1979,9 +2327,13 @@ def _domain_api(request, body, parts, user):
         if len(parts) == 3:
             rec = qs.filter(public_id=parts[2]).first()
             if request.method in ('PATCH','PUT') and rec:
-                rec.payload.update(body); rec.save(update_fields=['payload','updated_at']); return JsonResponse(_resource_dict(rec))
+                rec.payload.update(body); rec.save(update_fields=['payload','updated_at'])
+                _invalidate_caches(collection='contents')
+                return JsonResponse(_resource_dict(rec))
             if request.method == 'DELETE' and rec:
-                rec.delete(); return _response({'deleted': True})
+                rec.delete()
+                _invalidate_caches(collection='contents')
+                return _response({'deleted': True})
             if request.method == 'GET' and rec: return JsonResponse(_resource_dict(rec))
 
     # Student learning records are persisted per user; derived endpoints use that data.
@@ -1995,7 +2347,7 @@ def _domain_api(request, body, parts, user):
 
             student_class = str(user.class_name or '').strip().casefold()
             visible_contents = []
-            for record in Resource.objects.filter(collection='contents'):
+            for record in _cached_contents_records():
                 content = _resource_dict(record)
                 allowed_classes = content.get('visibleToClasses') or []
                 if isinstance(allowed_classes, str):
@@ -2708,13 +3060,27 @@ def api(request, path=''):
             if request.method == 'DELETE':
                 user.face_hash = ''
                 user.save(update_fields=['face_hash'])
+                _invalidate_caches(user_id=user.pk)
                 return _response({'enrolled': False, 'faceIdEnabled': False, 'user': _profile(user)})
             face_hash = str(body.get('faceHash', '')).strip()
             if not re.fullmatch(r'[01]{64,512}', face_hash):
                 return JsonResponse({'success': False, 'message': 'Empreinte faciale invalide. Veuillez réessayer face à la caméra.'}, status=400)
+            # Enforce unique Face ID per user
+            duplicate_threshold = round(len(face_hash) * 0.22)
+            for other in User.objects.exclude(pk=user.pk).exclude(face_hash=''):
+                other_hash = str(other.face_hash or '').strip()
+                if len(other_hash) != len(face_hash):
+                    continue
+                distance = sum(1 for a, b in zip(other_hash, face_hash) if a != b)
+                if distance <= duplicate_threshold:
+                    return JsonResponse({
+                        'success': False,
+                        'message': "Ce visage est déjà associé à un autre compte utilisateur. Chaque utilisateur doit avoir un Face ID unique.",
+                    }, status=409)
             user.face_hash = face_hash
             user.save(update_fields=['face_hash'])
-            return _response({'enrolled': True, 'faceIdEnabled': True, 'user': _profile(user), 'message': 'Face ID enregistré avec succès.'})
+            _invalidate_caches(user_id=user.pk)
+            return _response({'enrolled': True, 'faceIdEnabled': True, 'user': _profile(user), 'message': 'Face ID unique enregistré avec succès.'})
         if (action == 'face-id/login' or sub_action == 'face-id/login') and request.method == 'POST':
             face_hash = str(body.get('faceHash', '')).strip()
             if not re.fullmatch(r'[01]{64,512}', face_hash):
@@ -2723,17 +3089,16 @@ def api(request, path=''):
             candidates = User.objects.filter(is_active=True).exclude(face_hash='')
             if requested_role in ('student', 'teacher'):
                 candidates = candidates.filter(user_role=requested_role)
-            best_user = None
-            best_distance = 10**9
+            scored_candidates = []
             for candidate in candidates:
                 stored_hash = str(candidate.face_hash or '').strip()
                 if len(stored_hash) != len(face_hash):
                     continue
                 distance = sum(1 for a, b in zip(stored_hash, face_hash) if a != b)
-                if distance < best_distance:
-                    best_distance = distance
-                    best_user = candidate
-            max_allowed = round(len(face_hash) * 0.35)
+                scored_candidates.append((distance, candidate))
+            scored_candidates.sort(key=lambda item: item[0])
+            best_distance, best_user = scored_candidates[0] if scored_candidates else (10**9, None)
+            max_allowed = round(len(face_hash) * 0.32)
             if not best_user or best_distance > max_allowed:
                 return JsonResponse({
                     'success': False,
