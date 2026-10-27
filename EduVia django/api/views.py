@@ -36,86 +36,7 @@ FRENCH_MONTHS = (
 
 
 def _sync_legacy_mongo_users():
-    global _LEGACY_USERS_SYNCED
-    if _LEGACY_USERS_SYNCED:
-        return
-    _LEGACY_USERS_SYNCED = True
-    try:
-        from django.db import connection
-        db = getattr(connection, 'database', None)
-        if db is None or 'users' not in set(db.list_collection_names()):
-            return
-        for legacy in db['users'].find():
-            email = str(legacy.get('email') or '').strip().lower()
-            if not email:
-                continue
-            target = User.objects.filter(email__iexact=email).first()
-            if not target:
-                continue
-            updated_fields = []
-            class_name = str(legacy.get('className') or '').strip()
-            if class_name and not target.class_name:
-                target.class_name = class_name
-                updated_fields.append('class_name')
-            assigned_classes = legacy.get('assignedClasses')
-            if isinstance(assigned_classes, list) and assigned_classes and not target.assigned_classes:
-                target.assigned_classes = [str(v).strip() for v in assigned_classes if str(v).strip()]
-                updated_fields.append('assigned_classes')
-            teaching_subjects = legacy.get('teachingSubjects')
-            if isinstance(teaching_subjects, list) and teaching_subjects and not target.teaching_subjects:
-                target.teaching_subjects = [str(v).strip() for v in teaching_subjects if str(v).strip()]
-                updated_fields.append('teaching_subjects')
-            teaching_assignments = legacy.get('teachingAssignments')
-            if isinstance(teaching_assignments, list) and teaching_assignments and not target.teaching_assignments:
-                target.teaching_assignments = [
-                    {
-                        'subject': str(item.get('subject') or '').strip(),
-                        'classes': [str(c).strip() for c in (item.get('classes') or []) if str(c).strip()],
-                    }
-                    for item in teaching_assignments
-                    if isinstance(item, dict) and str(item.get('subject') or '').strip()
-                ]
-                updated_fields.append('teaching_assignments')
-            profile_data = legacy.get('profileData') if isinstance(legacy.get('profileData'), dict) else {}
-            level = str(profile_data.get('level') or legacy.get('level') or '').strip()
-            if level and not target.level:
-                target.level = level
-                updated_fields.append('level')
-            avatar = str(profile_data.get('avatarDataUrl') or legacy.get('avatar') or '').strip()
-            if avatar and not target.avatar:
-                target.avatar = avatar
-                updated_fields.append('avatar')
-            if updated_fields:
-                target.save(update_fields=updated_fields)
-
-            learning_progress = legacy.get('learningProgress')
-            if isinstance(learning_progress, list) and learning_progress:
-                existing_ids = {
-                    str(r.payload.get('contentId') or '').strip()
-                    for r in Resource.objects.filter(collection='student/progress', owner=target)
-                }
-                for entry in learning_progress:
-                    if not isinstance(entry, dict):
-                        continue
-                    content_id = str(entry.get('contentId') or '').strip()
-                    if not content_id or content_id in existing_ids:
-                        continue
-                    Resource.objects.update_or_create(
-                        collection='student/progress',
-                        public_id=f'legacy-progress-{target.pk}-{content_id}',
-                        defaults={
-                            'owner': target,
-                            'payload': {
-                                'contentId': content_id,
-                                'contentType': str(entry.get('contentType') or ''),
-                                'status': str(entry.get('status') or 'completed'),
-                                'score': entry.get('score'),
-                            },
-                        },
-                    )
-                    existing_ids.add(content_id)
-    except Exception:
-        pass
+    return
 
 
 def _body(request):
@@ -144,15 +65,14 @@ def _user(request):
     return request.user if request.user.is_authenticated else None
 
 
-def _profile(user):
-    _sync_legacy_mongo_users()
+def _profile(user, check_resources=True):
     role = 'admin' if user.is_superuser else user.user_role
     initial_completed = True
     if role == 'student':
         initial_completed = bool(
             str(user.level or '').strip()
             or user.first_login_at is not None
-            or Resource.objects.filter(collection__in=('student/assessment', 'student/progress'), owner=user).exists()
+            or (check_resources and Resource.objects.filter(collection__in=('student/assessment', 'student/progress'), owner=user).exists())
         )
     face_enabled = bool(str(user.face_hash or '').strip())
     return {'id': str(user.pk), '_id': str(user.pk), 'userId': str(user.pk), 'email': user.email,
@@ -859,9 +779,7 @@ def _teacher_subject_keys(teacher):
     return subject_keys
 
 
-def _teacher_course_members(teacher, requested_class=''):
-    _sync_legacy_mongo_users()
-    teacher.refresh_from_db()
+def _teacher_course_members(teacher, requested_class='', include_progress=True):
     assigned_values = teacher.assigned_classes or []
     if isinstance(assigned_values, str):
         assigned_values = [assigned_values]
@@ -915,10 +833,11 @@ def _teacher_course_members(teacher, requested_class=''):
         if class_name:
             class_names.add(class_name)
         shares_with_all = shares_with_all or content.get('visibleToAllClasses') is True
+
+    all_active_students = list(User.objects.filter(user_role='student', is_active=True))
     if shares_with_all or not class_names:
         class_names.update(
-            User.objects.filter(user_role='student', is_active=True)
-            .exclude(class_name='').values_list('class_name', flat=True).distinct()
+            s.class_name.strip() for s in all_active_students if str(s.class_name or '').strip()
         )
 
     class_by_key = {name.casefold(): name for name in class_names}
@@ -932,11 +851,24 @@ def _teacher_course_members(teacher, requested_class=''):
         selected_classes = set(class_by_key)
 
     students = [
-        student for student in User.objects.filter(user_role='student', is_active=True)
+        student for student in all_active_students
         if student.class_name.strip().casefold() in selected_classes
     ]
     if not students and (not normalized_request or normalized_request == 'all'):
-        students = list(User.objects.filter(user_role='student', is_active=True))
+        students = all_active_students
+
+    if not include_progress:
+        return {
+            'classes': sorted(class_names, key=str.casefold),
+            'selectedClass': class_by_key.get(normalized_request, '') if (normalized_request and normalized_request != 'all') else 'all',
+            'totalStudents': len(students),
+            'students': [],
+        }
+
+    all_progress_by_owner = {}
+    if students:
+        for rec in Resource.objects.filter(collection='student/progress', owner__in=students):
+            all_progress_by_owner.setdefault(rec.owner_id, []).append(rec)
 
     result_students = []
     for student in students:
@@ -958,7 +890,7 @@ def _teacher_course_members(teacher, requested_class=''):
             content for content in student_contents
             if str(content.get('type') or '').strip().casefold() not in ('course', 'chapter', 'part')
         ]
-        progress = list(_owned_records('student/progress', student))
+        progress = all_progress_by_owner.get(student.pk, [])
         progress_by_id = {
             str(record.payload.get('contentId') or '').strip(): record
             for record in progress if str(record.payload.get('contentId') or '').strip()
@@ -1985,7 +1917,7 @@ def _domain_api(request, body, parts, user):
                 User.objects.filter(email__iexact=teacher_email).first() if teacher_email else None
             )
             if target_teacher:
-                members = _teacher_course_members(target_teacher, request.GET.get('className', ''))
+                members = _teacher_course_members(target_teacher, request.GET.get('className', ''), include_progress=False)
                 total_students = members.get('totalStudents', 0)
                 assigned_classes = members.get('classes', [])
             return JsonResponse({
@@ -2399,18 +2331,23 @@ def _domain_api(request, body, parts, user):
                     quizzes.append(quiz)
             return JsonResponse(quizzes, safe=False)
         if sub == 'leaderboard' and request.method == 'GET':
-            classmates = User.objects.filter(user_role='student', is_active=True)
+            classmates_qs = User.objects.filter(user_role='student', is_active=True)
             if user.class_name:
-                classmates = classmates.filter(class_name__iexact=user.class_name)
+                classmates_qs = classmates_qs.filter(class_name__iexact=user.class_name)
+            classmates = list(classmates_qs)
             content_by_id = {
                 str(record.public_id): _resource_dict(record)
                 for record in Resource.objects.filter(collection='contents')
             }
+            progress_by_owner = {}
+            if classmates:
+                for rec in Resource.objects.filter(collection='student/progress', owner__in=classmates):
+                    progress_by_owner.setdefault(rec.owner_id, []).append(rec)
             students = []
             for student in classmates:
                 scores = []
                 completed_content_ids = set()
-                for record in _owned_records('student/progress', student):
+                for record in progress_by_owner.get(student.pk, []):
                     cid = str(record.payload.get('contentId') or '').strip()
                     status_val = str(record.payload.get('status') or '').strip().casefold()
                     if status_val in ('completed', 'passed') and cid:
@@ -2831,7 +2768,7 @@ def api(request, path=''):
                 if len(parts) > 2:
                     target = User.objects.filter(pk=parts[2]).first()
                     return _response(_profile(target)) if target else JsonResponse({'success':False}, status=404)
-                return _response([_profile(u) for u in User.objects.all()])
+                return _response([_profile(u, check_resources=False) for u in User.objects.all()])
             if request.method == 'POST':
                 email = (body.get('email') or '').lower()
                 if not email: return JsonResponse({'success': False, 'message': 'Email obligatoire'}, status=400)

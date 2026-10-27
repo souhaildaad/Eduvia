@@ -68,6 +68,7 @@ MIGRATION_MODULES = {
 }
 
 MIDDLEWARE = [
+    'django.middleware.gzip.GZipMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'api.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -107,6 +108,8 @@ DATABASES = {
         'ENGINE': 'django_mongodb_backend',
         'HOST': os.environ.get('MONGODB_URI', 'mongodb://127.0.0.1:27017'),
         'NAME': os.environ.get('MONGODB_NAME', 'eduvia'),
+        'CONN_MAX_AGE': int(os.environ.get('CONN_MAX_AGE', '600')),
+        'CONN_HEALTH_CHECKS': True,
     }
 }
 
