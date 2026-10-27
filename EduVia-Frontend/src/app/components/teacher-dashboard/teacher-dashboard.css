@@ -106,47 +106,63 @@
 
 .custom-tab-group {
   ::ng-deep .mat-mdc-tab-header {
-    margin-bottom: 1.5rem;
+    margin-bottom: 1.25rem;
     border-bottom: 0;
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  ::ng-deep .mat-mdc-tab-label-container,
+  ::ng-deep .mat-mdc-tab-list {
+    flex-grow: 0 !important;
+    width: fit-content !important;
   }
 
   ::ng-deep .mat-mdc-tab-labels {
-    display: inline-flex;
-    flex-wrap: nowrap;
+    display: inline-flex !important;
+    flex-wrap: nowrap !important;
     align-items: center;
-    justify-content: start;
-    gap: 0.4rem;
-    width: fit-content;
+    justify-content: flex-start;
+    gap: 0.2rem;
+    width: fit-content !important;
     max-width: 100%;
     overflow-x: visible;
     white-space: nowrap;
     margin-inline: 0 auto;
-    padding: 0.4rem 0.55rem;
+    padding: 0.28rem 0.38rem;
     background: #e8e9f0;
     border-radius: 999px;
     box-shadow: none;
   }
 
+  ::ng-deep .mat-mdc-tab.mdc-tab,
   ::ng-deep .mdc-tab {
-    min-width: 0;
-    min-height: 2.85rem;
-    padding: 0.55rem 0.9rem;
-    border-radius: 1.05rem;
+    flex: 0 0 auto !important;
+    min-width: auto !important;
+    width: auto !important;
+    height: 2.3rem !important;
+    min-height: 2.3rem !important;
+    padding: 0.32rem 0.68rem !important;
+    border-radius: 999px !important;
     background: transparent;
+  }
+
+  ::ng-deep .mdc-tab__content {
+    height: 100%;
   }
 
   ::ng-deep .mdc-tab__text-label {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.55rem;
-    font-size: 0.88rem;
-    font-weight: 800;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    font-weight: 700;
     color: #091224;
   }
 
   ::ng-deep .mdc-tab--active {
-    background: #ffffff;
+    background: #ffffff !important;
     box-shadow: 0 1px 2px rgba(16, 23, 44, 0.08);
   }
 
@@ -157,7 +173,7 @@
 
   ::ng-deep .mdc-tab--active:hover,
   ::ng-deep .mdc-tab--active:focus {
-    background: #ffffff;
+    background: #ffffff !important;
   }
 
   ::ng-deep .mat-mdc-tab .mdc-tab__ripple::before,
@@ -170,9 +186,10 @@
   }
 
   ::ng-deep .mat-mdc-tab .mat-icon {
-    width: 1.2rem;
-    height: 1.2rem;
-    font-size: 1.2rem;
+    width: 1rem;
+    height: 1rem;
+    font-size: 1rem;
+    margin: 0 !important;
   }
 }
 
