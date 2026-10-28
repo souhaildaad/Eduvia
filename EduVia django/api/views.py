@@ -186,10 +186,23 @@ def _send_system_email(recipient_email, subject, body_text):
             with urllib.request.urlopen(req, timeout=12) as resp:
                 if resp.status in (200, 201):
                     return True, ''
+        except urllib.error.HTTPError as exc:
+            err_body = exc.read().decode('utf-8', errors='ignore')
+            try:
+                err_json = json.loads(err_body)
+                err_msg = err_json.get('message') or err_body
+            except Exception:
+                err_msg = err_body[:200]
+            logger.warning('Resend HTTP error: %s', err_msg)
+            # Resend free test mode restricts recipients to the account owner email
+            if 'only send testing emails to your own email address' in err_msg:
+                return False, f"Resend en mode test envoie uniquement vers votre e-mail de compte ({err_msg}). Pour envoyer à d'autres adresses, utilisez Brevo ou validez un domaine sur resend.com."
+            return False, f"Erreur Resend ({exc.code}) : {err_msg}"
         except Exception as exc:
             logger.warning('Resend HTTP email delivery failed: %s', exc)
+            return False, f"Erreur Resend : {exc}"
 
-    # 2. Try Brevo (Sendinblue) HTTP API (port 443 HTTPS - never blocked by Render)
+    # 2. Try Brevo (Sendinblue) HTTP API (port 443 HTTPS - never blocked by Render, sends to any address)
     if brevo_key:
         try:
             sender_email = from_email if '@' in from_email else 'noreply@eduvia.app'
@@ -212,8 +225,13 @@ def _send_system_email(recipient_email, subject, body_text):
             with urllib.request.urlopen(req, timeout=12) as resp:
                 if resp.status in (200, 201):
                     return True, ''
+        except urllib.error.HTTPError as exc:
+            err_body = exc.read().decode('utf-8', errors='ignore')
+            logger.warning('Brevo HTTP error: %s', err_body)
+            return False, f"Erreur Brevo ({exc.code}) : {err_body[:200]}"
         except Exception as exc:
             logger.warning('Brevo HTTP email delivery failed: %s', exc)
+            return False, f"Erreur Brevo : {exc}"
 
     # 3. Standard Django SMTP fallback
     try:
