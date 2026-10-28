@@ -156,6 +156,81 @@ def _verification_url(user):
     return f'{backend_url}/auth/verify-email?{urlencode({"token": token})}'
 
 
+def _send_system_email(recipient_email, subject, body_text):
+    """Send an email using HTTP API (Resend / Brevo) if configured, or standard Django SMTP as fallback.
+    HTTPS APIs (port 443) work on all cloud platforms (including Render Free Tier where outbound SMTP is blocked).
+    """
+    resend_key = os.environ.get('RESEND_API_KEY', '').strip()
+    brevo_key = os.environ.get('BREVO_API_KEY', '').strip()
+    from_email = os.environ.get('DEFAULT_FROM_EMAIL', '').strip() or settings.DEFAULT_FROM_EMAIL
+
+    # 1. Try Resend HTTP API (port 443 HTTPS - never blocked by Render)
+    if resend_key:
+        try:
+            req_data = json.dumps({
+                'from': from_email if '@' in from_email and not from_email.endswith('@gmail.com') else 'EduVia <onboarding@resend.dev>',
+                'to': [recipient_email],
+                'subject': subject,
+                'text': body_text,
+            }).encode('utf-8')
+            req = urllib.request.Request(
+                'https://api.resend.com/emails',
+                data=req_data,
+                headers={
+                    'Authorization': f'Bearer {resend_key}',
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'EduVia-Mail/1.0',
+                },
+                method='POST',
+            )
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                if resp.status in (200, 201):
+                    return True, ''
+        except Exception as exc:
+            logger.warning('Resend HTTP email delivery failed: %s', exc)
+
+    # 2. Try Brevo (Sendinblue) HTTP API (port 443 HTTPS - never blocked by Render)
+    if brevo_key:
+        try:
+            sender_email = from_email if '@' in from_email else 'noreply@eduvia.app'
+            req_data = json.dumps({
+                'sender': {'name': 'EduVia', 'email': sender_email},
+                'to': [{'email': recipient_email}],
+                'subject': subject,
+                'textContent': body_text,
+            }).encode('utf-8')
+            req = urllib.request.Request(
+                'https://api.brevo.com/v3/smtp/email',
+                data=req_data,
+                headers={
+                    'api-key': brevo_key,
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'EduVia-Mail/1.0',
+                },
+                method='POST',
+            )
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                if resp.status in (200, 201):
+                    return True, ''
+        except Exception as exc:
+            logger.warning('Brevo HTTP email delivery failed: %s', exc)
+
+    # 3. Standard Django SMTP fallback
+    try:
+        sent = send_mail(subject, body_text, settings.DEFAULT_FROM_EMAIL, [recipient_email], fail_silently=False)
+        is_smtp = settings.EMAIL_BACKEND.endswith('smtp.EmailBackend')
+        if not is_smtp:
+            return False, "Le serveur utilise le mode console (variables SMTP manquantes)."
+        return bool(sent), ''
+    except OSError as exc:
+        # Common on Render Free Tier where ports 25/465/587 are blocked
+        logger.warning('SMTP socket error (port blocked by host?): %s', exc)
+        return False, f"Port SMTP bloqué par l'hébergeur ({exc}). Utilisez un service HTTP (Resend/Brevo) ou transmettez le mot de passe manuellement."
+    except Exception as exc:
+        logger.exception('SMTP send_mail failed: %s', exc)
+        return False, f'{type(exc).__name__}: {exc}'[:250]
+
+
 def _send_verification_email(user, password=None):
     lines = [f"Bonjour {user.first_name or user.username},", '',
              'Confirmez votre adresse e-mail en ouvrant ce lien (valable 24 heures) :',
@@ -163,9 +238,8 @@ def _send_verification_email(user, password=None):
     if password:
         lines.extend(['', f'Identifiant : {user.email}', f'Mot de passe temporaire : {password}',
                       'Veuillez modifier ce mot de passe après votre première connexion.'])
-    sent = send_mail('Confirmez votre adresse e-mail EduVia', '\n'.join(lines), None, [user.email], fail_silently=False)
-    # The console backend only prints messages to the server terminal; it does not deliver them.
-    return bool(sent and settings.EMAIL_BACKEND.endswith('smtp.EmailBackend'))
+    success, error = _send_system_email(user.email, 'Confirmez votre adresse e-mail EduVia', '\n'.join(lines))
+    return success, error
 
 
 def _response(data=None, **extra):
@@ -3012,18 +3086,9 @@ def api(request, path=''):
             target.save(update_fields=['password','password_changed'])
             return _response({'message':'Password reset'})
         if action == 'forgot-password' and request.method == 'POST':
-            smtp_configured = (
-                settings.EMAIL_BACKEND.endswith('smtp.EmailBackend')
-                and settings.EMAIL_HOST and settings.EMAIL_HOST_USER and settings.EMAIL_HOST_PASSWORD
-            )
-            if not smtp_configured:
-                return JsonResponse({
-                    'success': False,
-                    'message': "L'envoi des e-mails n'est pas configuré. Ajoutez les paramètres SMTP dans EduVia django/.env puis redémarrez Django.",
-                }, status=503)
-
             target = User.objects.filter(email__iexact=body.get('email','').strip()).first()
             email_sent = False
+            error_msg = ''
             if target:
                 token = signing.dumps({'uid': str(target.pk), 'purpose':'password-reset'}, salt='eduvia-reset')
                 reset_url = f"{settings.FRONTEND_URL.rstrip('/')}/reset-password?{urlencode({'token': token})}"
@@ -3032,17 +3097,11 @@ def api(request, path=''):
                     "Pour choisir un nouveau mot de passe EduVia, ouvrez ce lien (valable une heure) :\n"
                     f"{reset_url}\n\nSi vous n'avez pas demandé cette réinitialisation, ignorez cet e-mail."
                 )
-                try:
-                    email_sent = send_mail(
-                        'Réinitialisation du mot de passe EduVia', message,
-                        settings.DEFAULT_FROM_EMAIL, [target.email], fail_silently=False,
-                    ) == 1
-                except Exception:
-                    logger.exception('Password reset email delivery failed')
+                email_sent, error_msg = _send_system_email(target.email, 'Réinitialisation du mot de passe EduVia', message)
                 if not email_sent:
                     return JsonResponse({
                         'success': False,
-                        'message': "Le serveur e-mail n'a pas accepté l'envoi. Vérifiez l'adresse Gmail et le mot de passe d'application dans .env.",
+                        'message': error_msg or "Le serveur e-mail n'a pas accepté l'envoi. Vérifiez les paramètres dans .env.",
                     }, status=503)
             return _response({
                 'message': "Si cette adresse correspond à un compte, un lien a été envoyé. Vérifiez aussi les courriers indésirables.",
@@ -3124,11 +3183,11 @@ def api(request, path=''):
                 target = User.objects.filter(pk=parts[2]).first()
                 if not target: return JsonResponse({'success':False,'message':'Utilisateur introuvable'}, status=404)
                 if target.email_verified: return _response({'emailSent':False,'emailVerified':True})
-                try:
-                    sent = _send_verification_email(target)
-                    return _response({'emailSent': bool(sent), 'emailVerified':False})
-                except Exception:
-                    return JsonResponse({'success':False,'message':"E-mail non envoyé. Vérifiez la configuration SMTP Django."}, status=503)
+                sent, error_msg = _send_verification_email(target)
+                if target.email_verified: return _response({'emailSent':False,'emailVerified':True})
+                if not sent:
+                    return JsonResponse({'success':False,'message': error_msg or "E-mail non envoyé. Vérifiez la configuration SMTP Django."}, status=503)
+                return _response({'emailSent': True, 'emailVerified':False})
             if request.method == 'GET':
                 if len(parts) > 2:
                     target = User.objects.filter(pk=parts[2]).first()
@@ -3145,15 +3204,7 @@ def api(request, path=''):
                     assigned_classes=body.get('assignedClasses', []), teaching_subjects=body.get('teachingSubjects', []),
                     teaching_assignments=body.get('teachingAssignments', []))
                 generated_password = not body.get('password')
-                email_error = ''
-                try:
-                    sent = _send_verification_email(new_user, password if generated_password else None)
-                    if not sent:
-                        email_error = "Le serveur Django utilise le backend console (variables EMAIL_HOST / EMAIL_HOST_USER / EMAIL_HOST_PASSWORD absentes)."
-                except Exception as exc:
-                    logger.exception('Verification email delivery failed for %s', new_user.email)
-                    sent = 0
-                    email_error = f'{type(exc).__name__}: {exc}'[:300]
+                sent, email_error = _send_verification_email(new_user, password if generated_password else None)
                 payload = {**_profile(new_user), 'emailSent': bool(sent)}
                 if not sent:
                     payload['emailError'] = email_error
