@@ -150,13 +150,128 @@ def _profile(user, check_resources=True):
             'updatedAt': user.legacy_updated_at}
 
 
-def _verification_url(user):
+def _get_base_urls(request=None):
+    """Determine dynamic backend and frontend URLs for emails and redirects."""
+    backend_url = os.environ.get('BACKEND_URL', '').strip().rstrip('/')
+    if not backend_url and os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
+        backend_url = f"https://{os.environ['RENDER_EXTERNAL_HOSTNAME']}"
+    if not backend_url and request:
+        backend_url = f"{request.scheme}://{request.get_host()}".rstrip('/')
+    if not backend_url:
+        backend_url = 'https://eduvia-backend-4iqm.onrender.com'
+
+    frontend_url = os.environ.get('FRONTEND_URL', '').strip().rstrip('/')
+    if not frontend_url:
+        if request:
+            origin = request.headers.get('Origin') or request.headers.get('Referer')
+            if origin:
+                from urllib.parse import urlparse
+                p = urlparse(origin)
+                if p.scheme and p.netloc:
+                    frontend_url = f"{p.scheme}://{p.netloc}".rstrip('/')
+    if not frontend_url:
+        frontend_url = os.environ.get('FRONTEND_PUBLIC_URL', 'https://eduvia.vercel.app').rstrip('/')
+
+    return backend_url, frontend_url
+
+
+def _verification_url(user, request=None):
     token = signing.dumps({'uid': str(user.pk), 'purpose': 'email-verification'}, salt='eduvia-email-verification')
-    backend_url = os.environ.get('BACKEND_URL', 'http://localhost:3000').rstrip('/')
+    backend_url, _ = _get_base_urls(request)
     return f'{backend_url}/auth/verify-email?{urlencode({"token": token})}'
 
 
-def _send_system_email(recipient_email, subject, body_text):
+def _build_verification_email_html(user, verification_url, password=None):
+    name = html.escape(user.get_full_name() or user.first_name or user.username or 'Étudiant')
+    email = html.escape(user.email)
+    pwd_block = ''
+    if password:
+        pwd_block = f"""
+        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #8b1538; border-radius: 8px; padding: 18px 22px; margin: 26px 0;">
+            <p style="margin: 0 0 10px 0; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #8b1538;">Vos identifiants de connexion :</p>
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="width: 100%; font-size: 14px; color: #1e293b;">
+                <tr>
+                    <td style="padding: 4px 0; font-weight: 600; width: 140px; color: #475569;">E-mail :</td>
+                    <td style="padding: 4px 0; font-family: monospace; font-size: 14px; color: #0f172a;"><strong>{email}</strong></td>
+                </tr>
+                <tr>
+                    <td style="padding: 4px 0; font-weight: 600; color: #475569;">Mot de passe temporaire :</td>
+                    <td style="padding: 4px 0; font-family: monospace; font-size: 15px; color: #8b1538;"><strong>{html.escape(password)}</strong></td>
+                </tr>
+            </table>
+            <p style="margin: 12px 0 0 0; font-size: 12px; color: #64748b; font-style: italic;">
+                Veuillez modifier ce mot de passe temporaire après votre première connexion pour sécuriser votre compte.
+            </p>
+        </div>
+        """
+
+    return f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmez votre compte EduVia</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #334155; line-height: 1.6;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f1f5f9; padding: 35px 15px;">
+        <tr>
+            <td align="center">
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 580px; background-color: #ffffff; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.07); border: 1px solid #e2e8f0;">
+                    <tr>
+                        <td align="center" style="background: linear-gradient(135deg, #8b1538 0%, #5c0922 100%); padding: 32px 24px;">
+                            <h1 style="margin: 0; color: #ffffff; font-size: 26px; font-weight: 800; letter-spacing: 0.5px;">EduVia</h1>
+                            <p style="margin: 6px 0 0 0; color: #ffd6df; font-size: 14px; font-weight: 400;">Learn smart, Think EduVia</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 36px 32px 28px 32px;">
+                            <h2 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 700; color: #0f172a;">Bonjour {name},</h2>
+                            <p style="margin: 0 0 16px 0; font-size: 15px; color: #334155;">
+                                Bienvenue sur <strong>EduVia</strong> ! Votre compte a été créé avec succès par l'administration.
+                            </p>
+                            <p style="margin: 0 0 24px 0; font-size: 15px; color: #334155;">
+                                Cliquez sur le bouton ci-dessous pour confirmer votre adresse e-mail. Vous serez automatiquement redirigé vers la page de connexion :
+                            </p>
+
+                            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 28px 0;">
+                                <tr>
+                                    <td align="center">
+                                        <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+                                            <tr>
+                                                <td align="center" style="border-radius: 8px; background: linear-gradient(135deg, #8b1538 0%, #b81c47 100%); box-shadow: 0 4px 12px rgba(139, 21, 56, 0.35);">
+                                                    <a href="{verification_url}" target="_blank" style="display: inline-block; padding: 15px 36px; font-size: 16px; font-weight: 700; color: #ffffff; text-decoration: none; border-radius: 8px; letter-spacing: 0.3px;">
+                                                        Confirmer mon compte
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            {pwd_block}
+
+                            <p style="margin: 24px 0 0 0; font-size: 13px; color: #64748b; line-height: 1.5;">
+                                <strong>Note :</strong> Ce lien est valable pendant 24 heures. Si le bouton ne s'affiche pas correctement, vous pouvez copier et coller ce lien dans votre navigateur :<br>
+                                <a href="{verification_url}" style="color: #8b1538; word-break: break-all; font-size: 12px;">{verification_url}</a>
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td align="center" style="background-color: #f8fafc; padding: 22px 24px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8;">
+                            <p style="margin: 0;">© 2026 EduVia • Plateforme d'apprentissage et de formation</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+"""
+
+
+def _send_system_email(recipient_email, subject, body_text, html_body=None):
     """Send an email using HTTP API (Resend / Brevo) if configured, or standard Django SMTP as fallback.
     HTTPS APIs (port 443) work on all cloud platforms (including Render Free Tier where outbound SMTP is blocked).
     """
@@ -167,12 +282,15 @@ def _send_system_email(recipient_email, subject, body_text):
     # 1. Try Resend HTTP API (port 443 HTTPS - never blocked by Render)
     if resend_key:
         try:
-            req_data = json.dumps({
+            resend_payload = {
                 'from': from_email if '@' in from_email and not from_email.endswith('@gmail.com') else 'EduVia <onboarding@resend.dev>',
                 'to': [recipient_email],
                 'subject': subject,
                 'text': body_text,
-            }).encode('utf-8')
+            }
+            if html_body:
+                resend_payload['html'] = html_body
+            req_data = json.dumps(resend_payload).encode('utf-8')
             req = urllib.request.Request(
                 'https://api.resend.com/emails',
                 data=req_data,
@@ -206,12 +324,15 @@ def _send_system_email(recipient_email, subject, body_text):
     if brevo_key:
         try:
             sender_email = from_email if '@' in from_email else 'noreply@eduvia.app'
-            req_data = json.dumps({
+            brevo_payload = {
                 'sender': {'name': 'EduVia', 'email': sender_email},
                 'to': [{'email': recipient_email}],
                 'subject': subject,
                 'textContent': body_text,
-            }).encode('utf-8')
+            }
+            if html_body:
+                brevo_payload['htmlContent'] = html_body
+            req_data = json.dumps(brevo_payload).encode('utf-8')
             req = urllib.request.Request(
                 'https://api.brevo.com/v3/smtp/email',
                 data=req_data,
@@ -235,7 +356,7 @@ def _send_system_email(recipient_email, subject, body_text):
 
     # 3. Standard Django SMTP fallback
     try:
-        sent = send_mail(subject, body_text, settings.DEFAULT_FROM_EMAIL, [recipient_email], fail_silently=False)
+        sent = send_mail(subject, body_text, settings.DEFAULT_FROM_EMAIL, [recipient_email], html_message=html_body, fail_silently=False)
         is_smtp = settings.EMAIL_BACKEND.endswith('smtp.EmailBackend')
         if not is_smtp:
             return False, "Le serveur utilise le mode console (variables SMTP manquantes)."
@@ -249,14 +370,17 @@ def _send_system_email(recipient_email, subject, body_text):
         return False, f'{type(exc).__name__}: {exc}'[:250]
 
 
-def _send_verification_email(user, password=None):
+def _send_verification_email(user, password=None, request=None):
+    verification_url = _verification_url(user, request=request)
     lines = [f"Bonjour {user.first_name or user.username},", '',
              'Confirmez votre adresse e-mail en ouvrant ce lien (valable 24 heures) :',
-             _verification_url(user)]
+             verification_url]
     if password:
         lines.extend(['', f'Identifiant : {user.email}', f'Mot de passe temporaire : {password}',
                       'Veuillez modifier ce mot de passe après votre première connexion.'])
-    success, error = _send_system_email(user.email, 'Confirmez votre adresse e-mail EduVia', '\n'.join(lines))
+    body_text = '\n'.join(lines)
+    html_body = _build_verification_email_html(user, verification_url, password)
+    success, error = _send_system_email(user.email, 'Confirmez votre adresse e-mail EduVia', body_text, html_body=html_body)
     return success, error
 
 
@@ -3080,15 +3204,18 @@ def api(request, path=''):
     if parts[:1] == ['auth']:
         action = parts[1] if len(parts) > 1 else ''
         if action == 'verify-email' and request.method == 'GET':
-            frontend = settings.FRONTEND_URL.rstrip('/')
+            _, frontend = _get_base_urls(request)
             try:
                 data = signing.loads(request.GET.get('token', ''), salt='eduvia-email-verification', max_age=60 * 60 * 24)
                 if data.get('purpose') != 'email-verification': raise signing.BadSignature('Invalid purpose')
                 target = User.objects.get(pk=data['uid'])
                 if not target.email_verified:
                     target.email_verified = True
-                    target.save(update_fields=['email_verified'])
-                return redirect(f'{frontend}/?verified=1')
+                    target.is_active = True
+                    target.save(update_fields=['email_verified', 'is_active'])
+                role = getattr(target, 'user_role', 'student') or 'student'
+                query = urlencode({'verified': '1', 'role': role, 'email': target.email})
+                return redirect(f'{frontend}/?{query}')
             except Exception:
                 return redirect(f'{frontend}/?{urlencode({"verified": "0", "message": "Lien de confirmation invalide ou expiré"})}')
         if action == 'login' and request.method == 'POST':
@@ -3287,7 +3414,7 @@ def api(request, path=''):
                 target = User.objects.filter(pk=parts[2]).first()
                 if not target: return JsonResponse({'success':False,'message':'Utilisateur introuvable'}, status=404)
                 if target.email_verified: return _response({'emailSent':False,'emailVerified':True})
-                sent, error_msg = _send_verification_email(target)
+                sent, error_msg = _send_verification_email(target, request=request)
                 if target.email_verified: return _response({'emailSent':False,'emailVerified':True})
                 if not sent:
                     return JsonResponse({'success':False,'message': error_msg or "E-mail non envoyé. Vérifiez la configuration SMTP Django."}, status=503)
@@ -3303,16 +3430,32 @@ def api(request, path=''):
                 username = body.get('username') or email
                 password = body.get('password') or uuid.uuid4().hex
                 now_ts = timezone.now()
-                new_user = User.objects.create_user(username=username, email=email, password=password,
-                    first_name=body.get('firstName', ''), last_name=body.get('lastName', ''),
-                    user_role=body.get('role', 'student'), class_name=body.get('className', ''),
-                    assigned_classes=body.get('assignedClasses', []), teaching_subjects=body.get('teachingSubjects', []),
-                    teaching_assignments=body.get('teachingAssignments', []))
-                new_user.date_joined = now_ts
-                new_user.last_login = now_ts
-                new_user.save(update_fields=['date_joined', 'last_login'])
+                existing_user = User.objects.filter(email__iexact=email).first()
+                if existing_user:
+                    existing_user.first_name = body.get('firstName', existing_user.first_name)
+                    existing_user.last_name = body.get('lastName', existing_user.last_name)
+                    existing_user.user_role = body.get('role', existing_user.user_role)
+                    existing_user.class_name = body.get('className', existing_user.class_name)
+                    existing_user.assigned_classes = body.get('assignedClasses', existing_user.assigned_classes)
+                    existing_user.teaching_subjects = body.get('teachingSubjects', existing_user.teaching_subjects)
+                    existing_user.teaching_assignments = body.get('teachingAssignments', existing_user.teaching_assignments)
+                    existing_user.set_password(password)
+                    existing_user.is_active = True
+                    existing_user.date_joined = now_ts
+                    existing_user.last_login = now_ts
+                    existing_user.save()
+                    new_user = existing_user
+                else:
+                    new_user = User.objects.create_user(username=username, email=email, password=password,
+                        first_name=body.get('firstName', ''), last_name=body.get('lastName', ''),
+                        user_role=body.get('role', 'student'), class_name=body.get('className', ''),
+                        assigned_classes=body.get('assignedClasses', []), teaching_subjects=body.get('teachingSubjects', []),
+                        teaching_assignments=body.get('teachingAssignments', []))
+                    new_user.date_joined = now_ts
+                    new_user.last_login = now_ts
+                    new_user.save(update_fields=['date_joined', 'last_login'])
                 generated_password = not body.get('password')
-                sent, email_error = _send_verification_email(new_user, password if generated_password else None)
+                sent, email_error = _send_verification_email(new_user, password if generated_password else None, request=request)
                 payload = {**_profile(new_user), 'emailSent': bool(sent)}
                 if not sent:
                     payload['emailError'] = email_error
@@ -3393,7 +3536,7 @@ def register(request):
     user.last_login = now_ts
     user.save(update_fields=['date_joined', 'last_login'])
     try:
-        _send_verification_email(user)
+        _send_verification_email(user, request=request)
     except Exception:
         pass
     token = _token(user)
