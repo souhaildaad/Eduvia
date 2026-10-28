@@ -113,6 +113,52 @@ export class ReclamationsPanelComponent implements OnInit {
 
   // Admin inline edit drafts
   adminDrafts: Record<string, { status: ReclamationItem['status']; adminResponse: string; saving?: boolean }> = {};
+  editingHistoryId: string | null = null;
+
+  startEditHistory(item: ReclamationItem): void {
+    if (!this.adminDrafts[item.id]) {
+      this.adminDrafts[item.id] = {
+        status: item.status,
+        adminResponse: item.adminResponse || '',
+      };
+    } else {
+      this.adminDrafts[item.id].adminResponse = item.adminResponse || '';
+    }
+    this.editingHistoryId = item.id;
+  }
+
+  cancelHistoryEdit(): void {
+    this.editingHistoryId = null;
+  }
+
+  saveHistoryEdit(item: ReclamationItem): void {
+    const draft = this.adminDrafts[item.id] || {
+      status: item.status,
+      adminResponse: item.adminResponse || '',
+    };
+    draft.saving = true;
+    this.adminDrafts[item.id] = draft;
+
+    this.http
+      .patch<any>(`/api/reclamations/${item.id}`, {
+        status: item.status,
+        adminResponse: draft.adminResponse,
+      })
+      .subscribe({
+        next: () => {
+          draft.saving = false;
+          item.adminResponse = draft.adminResponse;
+          this.editingHistoryId = null;
+          this.showFeedback(`Réponse mise à jour avec succès dans l'historique.`, 'success');
+          this.loadReclamations();
+        },
+        error: err => {
+          draft.saving = false;
+          this.showFeedback(err?.error?.message || 'Échec de la mise à jour.', 'error');
+          this.cdr.detectChanges();
+        },
+      });
+  }
 
   ngOnInit(): void {
     this.loadReclamations();
@@ -327,7 +373,9 @@ export class ReclamationsPanelComponent implements OnInit {
       status: item.status,
       adminResponse: item.adminResponse || '',
     };
-    const nextStatus = quickStatus || draft.status;
+    // Marquer automatiquement comme Résolue pour transférer dans l'historique
+    const nextStatus = quickStatus || (draft.status === 'Rejetée' ? 'Rejetée' : 'Résolue');
+    draft.status = nextStatus;
     draft.saving = true;
     this.adminDrafts[item.id] = draft;
 

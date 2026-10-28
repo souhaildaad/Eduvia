@@ -264,14 +264,14 @@
           </div>
 
           <!-- Admin History Actions (resolved / rejected) -->
-          <div class="rec-item-footer" *ngIf="mode === 'admin' && isClosed(item)">
+          <div class="rec-item-footer" *ngIf="mode === 'admin' && isClosed(item) && editingHistoryId !== item.id">
             <button
               type="button"
               class="rec-action-btn"
-              (click)="reopenReclamation(item)"
+              (click)="startEditHistory(item)"
               [disabled]="adminDrafts[item.id]?.saving">
-              <mat-icon>restart_alt</mat-icon>
-              <span>Rouvrir</span>
+              <mat-icon>edit</mat-icon>
+              <span>Modifier</span>
             </button>
             <button
               type="button"
@@ -280,6 +280,43 @@
               <mat-icon>delete_outline</mat-icon>
               <span>Supprimer</span>
             </button>
+          </div>
+
+          <!-- Admin History Inline Edit Form -->
+          <div class="rec-admin-controls" *ngIf="mode === 'admin' && isClosed(item) && editingHistoryId === item.id">
+            <div class="rec-admin-controls-row">
+              <div class="rec-field rec-field--grow">
+                <label>Modifier la réponse de l'administration</label>
+                <textarea
+                  rows="2"
+                  [(ngModel)]="adminDrafts[item.id].adminResponse"
+                  placeholder="Modifier la réponse de l'administration..."></textarea>
+              </div>
+            </div>
+            <div class="rec-admin-actions">
+              <button
+                type="button"
+                class="rec-submit-btn"
+                (click)="saveHistoryEdit(item)"
+                [disabled]="adminDrafts[item.id]?.saving">
+                <mat-icon>save</mat-icon>
+                <span>{{ adminDrafts[item.id]?.saving ? 'Enregistrement...' : 'Enregistrer la modification' }}</span>
+              </button>
+              <button
+                type="button"
+                class="rec-action-btn"
+                (click)="cancelHistoryEdit()">
+                <mat-icon>close</mat-icon>
+                <span>Annuler</span>
+              </button>
+              <button
+                type="button"
+                class="rec-action-btn rec-action-btn--danger"
+                (click)="deleteReclamation(item)">
+                <mat-icon>delete_outline</mat-icon>
+                <span>Supprimer</span>
+              </button>
+            </div>
           </div>
 
           <!-- Admin Management Controls (active reclamations only) -->
@@ -304,19 +341,10 @@
               <button
                 type="button"
                 class="rec-submit-btn"
-                (click)="saveAdminDecision(item)"
+                (click)="saveAdminDecision(item, 'Résolue')"
                 [disabled]="adminDrafts[item.id].saving">
                 <mat-icon>save</mat-icon>
                 <span>{{ adminDrafts[item.id].saving ? 'Enregistrement...' : 'Enregistrer la réponse' }}</span>
-              </button>
-              <button
-                *ngIf="item.status !== 'Résolue'"
-                type="button"
-                class="rec-resolve-btn"
-                (click)="saveAdminDecision(item, 'Résolue')"
-                [disabled]="adminDrafts[item.id].saving">
-                <mat-icon>check_circle</mat-icon>
-                <span>Marquer Résolue</span>
               </button>
               <button
                 type="button"

@@ -3302,11 +3302,15 @@ def api(request, path=''):
                 if not email: return JsonResponse({'success': False, 'message': 'Email obligatoire'}, status=400)
                 username = body.get('username') or email
                 password = body.get('password') or uuid.uuid4().hex
+                now_ts = timezone.now()
                 new_user = User.objects.create_user(username=username, email=email, password=password,
                     first_name=body.get('firstName', ''), last_name=body.get('lastName', ''),
                     user_role=body.get('role', 'student'), class_name=body.get('className', ''),
                     assigned_classes=body.get('assignedClasses', []), teaching_subjects=body.get('teachingSubjects', []),
                     teaching_assignments=body.get('teachingAssignments', []))
+                new_user.date_joined = now_ts
+                new_user.last_login = now_ts
+                new_user.save(update_fields=['date_joined', 'last_login'])
                 generated_password = not body.get('password')
                 sent, email_error = _send_verification_email(new_user, password if generated_password else None)
                 payload = {**_profile(new_user), 'emailSent': bool(sent)}
@@ -3383,7 +3387,11 @@ def register(request):
     username = body.get('username') or email
     if User.objects.filter(username=username).exists() or User.objects.filter(email=email).exists():
         return JsonResponse({'success': False, 'message': 'Compte déjà existant'}, status=409)
+    now_ts = timezone.now()
     user = User.objects.create_user(username=username, email=email, password=body['password'], user_role='student')
+    user.date_joined = now_ts
+    user.last_login = now_ts
+    user.save(update_fields=['date_joined', 'last_login'])
     try:
         _send_verification_email(user)
     except Exception:

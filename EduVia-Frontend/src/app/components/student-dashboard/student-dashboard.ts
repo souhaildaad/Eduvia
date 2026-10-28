@@ -2964,6 +2964,11 @@ export class StudentDashboard implements OnInit, OnDestroy {
         }
       });
 
+    if (weaknesses.length === 0) {
+      weaknesses.push('Aucune faiblesse critique identifiée');
+      weaknesses.push('Continuer la pratique des quiz réguliers');
+    }
+
     return weaknesses.slice(0, 6);
   }
 
@@ -4360,6 +4365,9 @@ export class StudentDashboard implements OnInit, OnDestroy {
     const search = this.normalizeSearchText(this.searchTerm);
 
     let result = [...this.courseCatalog].filter(course => {
+      if (course.id.toLowerCase() === 'test' || course.title.trim().toLowerCase() === 'test' || course.title.trim().toLowerCase() === 'cours test') {
+        return false;
+      }
       const matchesSearch = !search || this.matchesCourseSearch(course, search);
 
       return matchesSearch;

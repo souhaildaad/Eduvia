@@ -984,7 +984,7 @@ export class UserManagement implements OnInit, OnDestroy {
         teachingAssignments: [{ subject: 'Algorithmique', classes: ['1A1', '1A2'] }],
         isVerified: true,
         accountStatus: 'active',
-        createdAt: new Date('2025-09-15'),
+        createdAt: new Date('2026-10-24'),
         isActive: true,
         lastActivityAt: new Date(Date.now() - 2 * 60 * 60 * 1000)
       },
@@ -996,7 +996,7 @@ export class UserManagement implements OnInit, OnDestroy {
         className: '1A1',
         isVerified: false,
         accountStatus: 'pending',
-        createdAt: new Date('2025-09-20'),
+        createdAt: new Date('2026-10-25'),
         isActive: true,
         lastActivityAt: new Date(Date.now() - 3 * 60 * 60 * 1000)
       },
@@ -1008,7 +1008,7 @@ export class UserManagement implements OnInit, OnDestroy {
         className: '1A2',
         isVerified: true,
         accountStatus: 'active',
-        createdAt: new Date('2025-09-22'),
+        createdAt: new Date('2026-10-26'),
         isActive: true,
         lastActivityAt: new Date(Date.now() - 5 * 60 * 60 * 1000)
       },
@@ -1022,7 +1022,7 @@ export class UserManagement implements OnInit, OnDestroy {
         teachingAssignments: [{ subject: 'Bases de donnees', classes: ['1A3'] }],
         isVerified: true,
         accountStatus: 'active',
-        createdAt: new Date('2025-09-18'),
+        createdAt: new Date('2026-10-27'),
         isActive: true,
         lastActivityAt: new Date(Date.now() - 4 * 60 * 60 * 1000)
       },
@@ -1034,7 +1034,7 @@ export class UserManagement implements OnInit, OnDestroy {
         className: '1A5',
         isVerified: false,
         accountStatus: 'blocked',
-        createdAt: new Date('2025-09-25'),
+        createdAt: new Date('2026-10-28'),
         isActive: false,
         lastActivityAt: new Date(Date.now() - 24 * 60 * 60 * 1000)
       }
