@@ -172,7 +172,7 @@ def _get_base_urls(request=None):
     if not frontend_url:
         frontend_url = os.environ.get('FRONTEND_PUBLIC_URL', '').strip().rstrip('/')
     if not frontend_url:
-        frontend_url = settings.FRONTEND_URL.rstrip('/') or 'http://localhost:4200'
+        frontend_url = getattr(settings, 'FRONTEND_URL', '').rstrip('/') or 'https://eduvia-rosy.vercel.app'
 
     return backend_url, frontend_url
 
@@ -3217,10 +3217,10 @@ def api(request, path=''):
                     target.is_active = True
                     target.save(update_fields=['email_verified', 'is_active'])
                 role = getattr(target, 'user_role', 'student') or 'student'
-                query = urlencode({'verified': '1', 'role': role, 'email': target.email})
+                query = urlencode({'role': role, 'verified': '1'})
                 return redirect(f'{frontend}/?{query}')
             except Exception:
-                return redirect(f'{frontend}/?{urlencode({"verified": "0", "message": "Lien de confirmation invalide ou expiré"})}')
+                return redirect(f'{frontend}/?role=student&verified=0')
         if action == 'login' and request.method == 'POST':
             login_id = (body.get('email') or '').strip().lower()
             user = User.objects.filter(email__iexact=login_id).first() or User.objects.filter(username__iexact=login_id).first()
