@@ -80,6 +80,37 @@ export class ReclamationsPanelComponent implements OnInit {
   priorityFilter: string = 'ALL';
   searchQuery = '';
 
+  // Active list vs. history (resolved / rejected reclamations)
+  viewMode: 'active' | 'history' = 'active';
+  private readonly closedStatuses: ReadonlyArray<ReclamationItem['status']> = ['Résolue', 'Rejetée'];
+
+  isClosed(item: ReclamationItem): boolean {
+    return this.closedStatuses.includes(item.status);
+  }
+
+  get activeCount(): number {
+    return this.reclamations.filter(r => !this.isClosed(r)).length;
+  }
+
+  get historyCount(): number {
+    return this.reclamations.filter(r => this.isClosed(r)).length;
+  }
+
+  get visibleStatuses(): Array<ReclamationItem['status']> {
+    return this.statuses.filter(st =>
+      this.viewMode === 'history' ? this.closedStatuses.includes(st) : !this.closedStatuses.includes(st),
+    );
+  }
+
+  setViewMode(mode: 'active' | 'history'): void {
+    this.viewMode = mode;
+    this.statusFilter = 'ALL';
+  }
+
+  reopenReclamation(item: ReclamationItem): void {
+    this.saveAdminDecision(item, 'En cours');
+  }
+
   // Admin inline edit drafts
   adminDrafts: Record<string, { status: ReclamationItem['status']; adminResponse: string; saving?: boolean }> = {};
 
@@ -142,6 +173,9 @@ export class ReclamationsPanelComponent implements OnInit {
   get filteredReclamations(): ReclamationItem[] {
     const query = this.searchQuery.trim().toLowerCase();
     return this.reclamations.filter(item => {
+      if ((this.viewMode === 'history') !== this.isClosed(item)) {
+        return false;
+      }
       if (this.statusFilter !== 'ALL' && item.status !== this.statusFilter) {
         return false;
       }
@@ -305,7 +339,16 @@ export class ReclamationsPanelComponent implements OnInit {
       .subscribe({
         next: () => {
           draft.saving = false;
-          this.showFeedback(`Réclamation « ${item.subject} » mise à jour (${nextStatus}).`, 'success');
+          const movedToHistory = this.closedStatuses.includes(nextStatus) && !this.isClosed(item);
+          const movedBack = !this.closedStatuses.includes(nextStatus) && this.isClosed(item);
+          this.showFeedback(
+            movedToHistory
+              ? `Réclamation « ${item.subject} » ${nextStatus === 'Résolue' ? 'résolue' : 'rejetée'} et déplacée dans l'historique.`
+              : movedBack
+                ? `Réclamation « ${item.subject} » rouverte (${nextStatus}).`
+                : `Réclamation « ${item.subject} » mise à jour (${nextStatus}).`,
+            'success',
+          );
           this.loadReclamations();
         },
         error: err => {
