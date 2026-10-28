@@ -170,7 +170,9 @@ def _get_base_urls(request=None):
                 if p.scheme and p.netloc:
                     frontend_url = f"{p.scheme}://{p.netloc}".rstrip('/')
     if not frontend_url:
-        frontend_url = os.environ.get('FRONTEND_PUBLIC_URL', 'https://eduvia.vercel.app').rstrip('/')
+        frontend_url = os.environ.get('FRONTEND_PUBLIC_URL', '').strip().rstrip('/')
+    if not frontend_url:
+        frontend_url = settings.FRONTEND_URL.rstrip('/') or 'http://localhost:4200'
 
     return backend_url, frontend_url
 
