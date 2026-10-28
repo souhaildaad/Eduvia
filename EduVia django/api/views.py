@@ -264,8 +264,90 @@ def _response(data=None, **extra):
     return JsonResponse({'success': True, 'data': data, **extra}, safe=not isinstance(data, list))
 
 
+_WORD_FIX_PATTERNS = [
+    (re.compile(r'\bdeuxime\b', re.I), 'deuxième'),
+    (re.compile(r'\btape\b'), 'étape'),
+    (re.compile(r'\bTape\b'), 'Étape'),
+    (re.compile(r'\btapes\b'), 'étapes'),
+    (re.compile(r'\bTapes\b'), 'Étapes'),
+    (re.compile(r'\bdmarche\b', re.I), 'démarche'),
+    (re.compile(r'\brsolution\b', re.I), 'résolution'),
+    (re.compile(r'\brsoudre\b', re.I), 'résoudre'),
+    (re.compile(r'\bproblme\b', re.I), 'problème'),
+    (re.compile(r'\bproblmes\b', re.I), 'problèmes'),
+    (re.compile(r'\bspcification\b', re.I), 'spécification'),
+    (re.compile(r'\bspcifier\b', re.I), 'spécifier'),
+    (re.compile(r'\bmodlisation\b', re.I), 'modélisation'),
+    (re.compile(r'\bexcutable\b', re.I), 'exécutable'),
+    (re.compile(r'\bexcution\b', re.I), 'exécution'),
+    (re.compile(r'\bexcuter\b', re.I), 'exécuter'),
+    (re.compile(r'\bcriture\b', re.I), 'écriture'),
+    (re.compile(r'\blment\b', re.I), 'élément'),
+    (re.compile(r'\blments\b', re.I), 'éléments'),
+    (re.compile(r'\bnonc\b', re.I), 'énoncé'),
+    (re.compile(r'\bdonnes\b', re.I), 'données'),
+    (re.compile(r'\bpremire\b', re.I), 'première'),
+    (re.compile(r'\bcinquime\b', re.I), 'cinquième'),
+    (re.compile(r'\baprs\b', re.I), 'après'),
+    (re.compile(r'\bdbut\b', re.I), 'début'),
+    (re.compile(r'\bsystme\b', re.I), 'système'),
+    (re.compile(r'\brseau\b', re.I), 'réseau'),
+    (re.compile(r'\brseaux\b', re.I), 'réseaux'),
+    (re.compile(r'\bmathmatique\b', re.I), 'mathématique'),
+    (re.compile(r'\bmathmatiques\b', re.I), 'mathématiques'),
+    (re.compile(r'\bvido\b', re.I), 'vidéo'),
+    (re.compile(r'\bvidos\b', re.I), 'vidéos'),
+    (re.compile(r'\brsum\b', re.I), 'résumé'),
+    (re.compile(r'\brvision\b', re.I), 'révision'),
+    (re.compile(r'\brvisions\b', re.I), 'révisions'),
+    (re.compile(r'\brgle\b', re.I), 'règle'),
+    (re.compile(r'\brgles\b', re.I), 'règles'),
+    (re.compile(r'\bdcision\b', re.I), 'décision'),
+    (re.compile(r'\bdcisions\b', re.I), 'décisions'),
+    (re.compile(r'\bmmoire\b', re.I), 'mémoire'),
+    (re.compile(r'\bparamtre\b', re.I), 'paramètre'),
+    (re.compile(r'\bparamtres\b', re.I), 'paramètres'),
+    (re.compile(r'\bmodle\b', re.I), 'modèle'),
+    (re.compile(r'\bmodles\b', re.I), 'modèles'),
+    (re.compile(r'\bintrt\b', re.I), 'intérêt'),
+    (re.compile(r'\bcontrle\b', re.I), 'contrôle'),
+    (re.compile(r'\bdfini\b', re.I), 'défini'),
+    (re.compile(r'\bdfinie\b', re.I), 'définie'),
+    (re.compile(r'\bdfinir\b', re.I), 'définir'),
+    (re.compile(r'\bdclaration\b', re.I), 'déclaration'),
+    (re.compile(r'\bpdagogique\b', re.I), 'pédagogique'),
+]
+
+
+def _clean_encoding(data):
+    if isinstance(data, str):
+        res = data
+        res = res.replace('\ufffd', 'é')
+        res = res.replace('Ã©', 'é').replace('Ã¨', 'è').replace('Ãª', 'ê')
+        res = res.replace('Ã ', 'à').replace('Ã§', 'ç').replace('Ã´', 'ô')
+        res = res.replace('Ã¹', 'ù').replace('Ã®', 'î').replace('Ã¯', 'ï')
+        res = res.replace('â€™', "'").replace('â€“', '–').replace('â€”', '—')
+        for pat, rep in _WORD_FIX_PATTERNS:
+            res = pat.sub(rep, res)
+        return res
+    elif isinstance(data, list):
+        return [_clean_encoding(x) for x in data]
+    elif isinstance(data, dict):
+        return {k: _clean_encoding(v) for k, v in data.items()}
+    return data
+
+
+def _is_test_content(payload):
+    if not isinstance(payload, dict):
+        return False
+    cid = str(payload.get('courseId') or '').strip().casefold()
+    title = str(payload.get('title') or '').strip().casefold()
+    return cid in ('test', 'cours test') or title in ('test', 'cours test')
+
+
 def _resource_dict(record):
-    return {**record.payload, '_id': record.public_id, 'id': record.public_id}
+    cleaned = _clean_encoding(record.payload or {})
+    return {**cleaned, '_id': record.public_id, 'id': record.public_id}
 
 
 def _save_record(collection, data, user=None, public_id=None):
@@ -470,6 +552,8 @@ def _visible_student_contents(user=None):
     visible = []
     for record in Resource.objects.filter(collection='contents'):
         content = _resource_dict(record)
+        if _is_test_content(content):
+            continue
         if content.get('isActive') is False:
             continue
         allowed = content.get('visibleToClasses') or []
@@ -2120,6 +2204,8 @@ def _domain_api(request, body, parts, user):
         visible_contents = []
         for record in Resource.objects.filter(collection='contents'):
             content = _resource_dict(record)
+            if _is_test_content(content):
+                continue
             allowed_classes = content.get('visibleToClasses') or []
             if isinstance(allowed_classes, str):
                 allowed_classes = [allowed_classes]
@@ -2329,7 +2415,7 @@ def _domain_api(request, body, parts, user):
         if len(parts) == 2 and request.method == 'GET':
             has_filters = any(request.GET.get(k) for k in ('teacherEmail', 'className', 'courseId', 'type'))
             if not has_filters:
-                return JsonResponse([_resource_dict(r) for r in _cached_contents_records()], safe=False)
+                return JsonResponse([_resource_dict(r) for r in _cached_contents_records() if not _is_test_content(r.payload or {})], safe=False)
             for key in ('teacherEmail', 'className', 'courseId', 'type'):
                 value = request.GET.get(key)
                 if value and key == 'teacherEmail' and user and user.user_role in ('teacher', 'admin') and user.email.casefold() == value.strip().casefold():
@@ -2338,7 +2424,7 @@ def _domain_api(request, body, parts, user):
                     qs = qs.filter(payload__teacherEmail__iexact=value)
                 elif value:
                     qs = qs.filter(**{f'payload__{key}': value})
-            return JsonResponse([_resource_dict(r) for r in qs], safe=False)
+            return JsonResponse([_resource_dict(r) for r in qs if not _is_test_content(r.payload or {})], safe=False)
         if len(parts) == 2 and request.method == 'POST':
             return JsonResponse(_resource_dict(_save_record('contents', body, user)))
         if len(parts) == 4 and parts[2] == 'course' and request.method == 'DELETE':

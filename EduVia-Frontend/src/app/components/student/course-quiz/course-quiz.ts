@@ -422,12 +422,24 @@ export class CourseQuiz implements OnInit, OnChanges {
       return null;
     }
 
+    const cleanedQuestions = (item.quizQuestions || []).map((q: any) => ({
+      ...q,
+      prompt: this.cleanEncoding(q?.prompt),
+      explanation: this.cleanEncoding(q?.explanation),
+      options: (q?.options || []).map((opt: any) => {
+        if (typeof opt === 'string') {
+          return { label: '', text: this.cleanEncoding(opt) };
+        }
+        return { ...opt, text: this.cleanEncoding(opt?.text) };
+      }),
+    }));
+
     return {
       _id: resolvedQuizId,
-      title: item.title || 'Quiz sans titre',
-      description: item.description || '',
-      courseId: item.courseId || '',
-      chapterId: item.chapterId || '',
+      title: this.cleanEncoding(item.title) || 'Quiz sans titre',
+      description: this.cleanEncoding(item.description) || '',
+      courseId: this.cleanEncoding(item.courseId) || '',
+      chapterId: this.cleanEncoding(item.chapterId) || '',
       partId: item.partId || '',
       fileUrl: item.fileUrl || undefined,
       fileName: item.fileName || undefined,
@@ -437,7 +449,7 @@ export class CourseQuiz implements OnInit, OnChanges {
       quizDurationMinutes: item.quizDurationMinutes || undefined,
       quizAttempts: item.quizAttempts || 1,
       quizPassingScore: item.quizPassingScore || 70,
-      quizQuestions: item.quizQuestions,
+      quizQuestions: cleanedQuestions,
     };
   }
 
@@ -876,5 +888,75 @@ export class CourseQuiz implements OnInit, OnChanges {
 
     this.startQuiz(targetQuiz);
   }
-}
 
+  cleanEncoding(text?: string | null): string {
+    if (!text) return '';
+    let str = String(text);
+    str = str.replace(/\ufffd/g, 'é');
+    str = str.replace(/Ã©/g, 'é').replace(/Ã¨/g, 'è').replace(/Ãª/g, 'ê')
+             .replace(/Ã /g, 'à').replace(/Ã§/g, 'ç').replace(/Ã´/g, 'ô')
+             .replace(/Ã¹/g, 'ù').replace(/Ã®/g, 'î').replace(/Ã¯/g, 'ï')
+             .replace(/â€™/g, "'").replace(/â€“/g, '–').replace(/â€”/g, '—')
+             .replace(/â€¦/g, '…').replace(/Â«/g, '«').replace(/Â»/g, '»');
+
+    const wordFixes: [RegExp, string][] = [
+      [/\bdeuxime\b/gi, 'deuxième'],
+      [/\btape\b/g, 'étape'],
+      [/\bTape\b/g, 'Étape'],
+      [/\btapes\b/g, 'étapes'],
+      [/\bTapes\b/g, 'Étapes'],
+      [/\bdmarche\b/gi, 'démarche'],
+      [/\brsolution\b/gi, 'résolution'],
+      [/\brsoudre\b/gi, 'résoudre'],
+      [/\bproblme\b/gi, 'problème'],
+      [/\bproblmes\b/gi, 'problèmes'],
+      [/\bspcification\b/gi, 'spécification'],
+      [/\bspcifier\b/gi, 'spécifier'],
+      [/\bmodlisation\b/gi, 'modélisation'],
+      [/\bexcutable\b/gi, 'exécutable'],
+      [/\bexcution\b/gi, 'exécution'],
+      [/\bexcuter\b/gi, 'exécuter'],
+      [/\bcriture\b/gi, 'écriture'],
+      [/\blment\b/gi, 'élément'],
+      [/\blments\b/gi, 'éléments'],
+      [/\bnonc\b/gi, 'énoncé'],
+      [/\bdonnes\b/gi, 'données'],
+      [/\bpremire\b/gi, 'première'],
+      [/\bcinquime\b/gi, 'cinquième'],
+      [/\baprs\b/gi, 'après'],
+      [/\bdbut\b/gi, 'début'],
+      [/\bsystme\b/gi, 'système'],
+      [/\brseau\b/gi, 'réseau'],
+      [/\brseaux\b/gi, 'réseaux'],
+      [/\bmathmatique\b/gi, 'mathématique'],
+      [/\bmathmatiques\b/gi, 'mathématiques'],
+      [/\bvido\b/gi, 'vidéo'],
+      [/\bvidos\b/gi, 'vidéos'],
+      [/\brsum\b/gi, 'résumé'],
+      [/\brvision\b/gi, 'révision'],
+      [/\brvisions\b/gi, 'révisions'],
+      [/\brgle\b/gi, 'règle'],
+      [/\brgles\b/gi, 'règles'],
+      [/\bdcision\b/gi, 'décision'],
+      [/\bdcisions\b/gi, 'décisions'],
+      [/\bmmoire\b/gi, 'mémoire'],
+      [/\bparamtre\b/gi, 'paramètre'],
+      [/\bparamtres\b/gi, 'paramètres'],
+      [/\bmodle\b/gi, 'modèle'],
+      [/\bmodles\b/gi, 'modèles'],
+      [/\bintrt\b/gi, 'intérêt'],
+      [/\bcontrle\b/gi, 'contrôle'],
+      [/\bdfini\b/gi, 'défini'],
+      [/\bdfinie\b/gi, 'définie'],
+      [/\bdfinir\b/gi, 'définir'],
+      [/\bdclaration\b/gi, 'déclaration'],
+      [/\bpdagogique\b/gi, 'pédagogique'],
+    ];
+
+    for (const [pattern, replacement] of wordFixes) {
+      str = str.replace(pattern, replacement);
+    }
+    return str;
+  }
+
+}

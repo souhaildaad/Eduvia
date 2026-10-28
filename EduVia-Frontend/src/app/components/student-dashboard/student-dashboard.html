@@ -669,41 +669,41 @@
             <span>Historique des quiz</span>
             <h3>Scores et dates</h3>
           </div>
-          <small>{{ portfolioEvaluationCount }} evaluation(s)</small>
+          <small>{{ portfolioEvaluationCount }} évaluation(s)</small>
         </div>
-        <article class="portfolio-quiz-row">
+        <article class="portfolio-quiz-row" *ngFor="let entry of portfolioQuizHistory">
           <div>
-            <h4>Test de niveau initial</h4>
-            <p>{{ portfolioInitialAssessmentLabel }}</p>
-            <strong *ngIf="portfolioWeaknesses.length">A revoir: {{ portfolioWeakLabels }}</strong>
+            <h4>{{ entry.title }}</h4>
+            <p>{{ entry.subtitle }} &bull; {{ entry.date }}</p>
+            <strong *ngIf="portfolioWeaknesses.length && entry.title === 'Test de niveau initial'">À revoir : {{ portfolioWeakLabels }}</strong>
           </div>
-          <span>{{ portfolioAverageScore }}%</span>
+          <span>{{ entry.score }}%</span>
         </article>
       </section>
 
       <section class="portfolio-panel">
         <div class="portfolio-panel__head">
           <div>
-            <span>Evolution dans le temps</span>
+            <span>Évolution dans le temps</span>
             <h3>Progression des scores</h3>
           </div>
           <mat-icon>show_chart</mat-icon>
         </div>
-        <div class="portfolio-score-line">
-          <span>Test de niveau initial</span>
-          <div><i [style.width.%]="portfolioAverageScore"></i></div>
-          <strong>{{ portfolioAverageScore }}%</strong>
+        <div class="portfolio-score-line" *ngFor="let entry of portfolioQuizHistory">
+          <span>{{ entry.title }}</span>
+          <div><i [style.width.%]="entry.score"></i></div>
+          <strong>{{ entry.score }}%</strong>
         </div>
       </section>
     </div>
 
     <div class="portfolio-grid portfolio-grid--three">
       <section class="portfolio-panel">
-        <h3><mat-icon>auto_awesome</mat-icon>Forces detectees</h3>
+        <h3><mat-icon>auto_awesome</mat-icon>Forces détectées</h3>
         <ul><li *ngFor="let strength of portfolioStrengths">{{ strength }}</li></ul>
       </section>
       <section class="portfolio-panel">
-        <h3><mat-icon>track_changes</mat-icon>Faiblesses a traiter</h3>
+        <h3><mat-icon>track_changes</mat-icon>Faiblesses à traiter</h3>
         <ul><li *ngFor="let weak of portfolioWeaknesses">{{ weak }}</li></ul>
       </section>
       <section class="portfolio-panel">
@@ -717,8 +717,8 @@
     <section class="portfolio-panel portfolio-remediation">
       <div class="portfolio-panel__head">
         <div>
-          <span>Remediation intelligente</span>
-          <h3>Quiz cibles sur vos acquis faibles</h3>
+          <span>Remédiation intelligente</span>
+          <h3>Quiz ciblés sur vos acquis faibles</h3>
         </div>
         <button type="button" class="portfolio-primary" (click)="openRemediationCenter()">
           <mat-icon>auto_awesome</mat-icon>
@@ -730,17 +730,17 @@
           <span>{{ weak.courseId || 'Test de niveau initial' }}</span>
           <strong>{{ weak.successRate }}%</strong>
           <h4>Renforcer l'acquis {{ weak.label }}</h4>
-          <p>Acquis faibles detectes: <b>{{ weak.label }}</b></p>
-          <small>Derniere tentative: {{ weak.reason }}</small>
+          <p>Acquis faibles détectés : <b>{{ weak.label }}</b></p>
+          <small>Dernière tentative : {{ weak.reason }}</small>
           <button type="button" class="portfolio-soft-button" (click)="startPortfolioRemediationQuiz(weak)">
-            {{ remediationQuizLoadingKey === (weak.key || weak.label) ? 'Generation...' : 'Faire le quiz' }}
+            {{ remediationQuizLoadingKey === (weak.key || weak.label) ? 'Génération...' : 'Faire le quiz' }}
           </button>
         </article>
       </div>
     </section>
   </section>
 
-  <section *ngIf="activeTab === 'communaute'" class="embedded-section">
+  <section *ngIf="activeTab === 'communaute'" class="embedded-section embedded-section--forum">
     <app-student-forum></app-student-forum>
   </section>
 

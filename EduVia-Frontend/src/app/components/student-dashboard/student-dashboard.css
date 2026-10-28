@@ -3178,6 +3178,15 @@ border-radius: inherit;
 }
 .embedded-section {
 padding: 1.5rem;
+}
+.embedded-section--forum {
+padding: 0;
+border: none;
+background: transparent;
+box-shadow: none;
+overflow: visible;
+min-height: auto;
+height: auto;
 }
 .embedded-section--empty {
 display: grid;

@@ -2712,8 +2712,167 @@ export class StudentDashboard implements OnInit, OnDestroy {
     window.setTimeout(() => this.loadStudentContent(), 350);
   }
 
-  get portfolioAverageScore() {
-    return this.initialAssessmentResult()?.score || 0;
+  cleanEncoding(text?: string | null): string {
+    if (!text) return '';
+    let str = String(text);
+    str = str.replace(/\ufffd/g, 'é');
+    str = str.replace(/Ã©/g, 'é').replace(/Ã¨/g, 'è').replace(/Ãª/g, 'ê')
+             .replace(/Ã /g, 'à').replace(/Ã§/g, 'ç').replace(/Ã´/g, 'ô')
+             .replace(/Ã¹/g, 'ù').replace(/Ã®/g, 'î').replace(/Ã¯/g, 'ï')
+             .replace(/â€™/g, "'").replace(/â€“/g, '–').replace(/â€”/g, '—')
+             .replace(/â€¦/g, '…').replace(/Â«/g, '«').replace(/Â»/g, '»');
+
+    const wordFixes: [RegExp, string][] = [
+      [/\bdeuxime\b/gi, 'deuxième'],
+      [/\btape\b/g, 'étape'],
+      [/\bTape\b/g, 'Étape'],
+      [/\btapes\b/g, 'étapes'],
+      [/\bTapes\b/g, 'Étapes'],
+      [/\bdmarche\b/gi, 'démarche'],
+      [/\brsolution\b/gi, 'résolution'],
+      [/\brsoudre\b/gi, 'résoudre'],
+      [/\bproblme\b/gi, 'problème'],
+      [/\bproblmes\b/gi, 'problèmes'],
+      [/\bspcification\b/gi, 'spécification'],
+      [/\bspcifier\b/gi, 'spécifier'],
+      [/\bmodlisation\b/gi, 'modélisation'],
+      [/\bexcutable\b/gi, 'exécutable'],
+      [/\bexcution\b/gi, 'exécution'],
+      [/\bexcuter\b/gi, 'exécuter'],
+      [/\bcriture\b/gi, 'écriture'],
+      [/\blment\b/gi, 'élément'],
+      [/\blments\b/gi, 'éléments'],
+      [/\bnonc\b/gi, 'énoncé'],
+      [/\bdonnes\b/gi, 'données'],
+      [/\bpremire\b/gi, 'première'],
+      [/\bcinquime\b/gi, 'cinquième'],
+      [/\baprs\b/gi, 'après'],
+      [/\bdbut\b/gi, 'début'],
+      [/\bsystme\b/gi, 'système'],
+      [/\brseau\b/gi, 'réseau'],
+      [/\brseaux\b/gi, 'réseaux'],
+      [/\bmathmatique\b/gi, 'mathématique'],
+      [/\bmathmatiques\b/gi, 'mathématiques'],
+      [/\bvido\b/gi, 'vidéo'],
+      [/\bvidos\b/gi, 'vidéos'],
+      [/\brsum\b/gi, 'résumé'],
+      [/\brvision\b/gi, 'révision'],
+      [/\brvisions\b/gi, 'révisions'],
+      [/\brgle\b/gi, 'règle'],
+      [/\brgles\b/gi, 'règles'],
+      [/\bdcision\b/gi, 'décision'],
+      [/\bdcisions\b/gi, 'décisions'],
+      [/\bmmoire\b/gi, 'mémoire'],
+      [/\bparamtre\b/gi, 'paramètre'],
+      [/\bparamtres\b/gi, 'paramètres'],
+      [/\bmodle\b/gi, 'modèle'],
+      [/\bmodles\b/gi, 'modèles'],
+      [/\bintrt\b/gi, 'intérêt'],
+      [/\bcontrle\b/gi, 'contrôle'],
+      [/\bdfini\b/gi, 'défini'],
+      [/\bdfinie\b/gi, 'définie'],
+      [/\bdfinir\b/gi, 'définir'],
+      [/\bdclaration\b/gi, 'déclaration'],
+      [/\bpdagogique\b/gi, 'pédagogique'],
+    ];
+
+    for (const [pattern, replacement] of wordFixes) {
+      str = str.replace(pattern, replacement);
+    }
+    return str;
+  }
+
+  get portfolioQuizHistory(): Array<{
+    title: string;
+    subtitle: string;
+    score: number;
+    date: string;
+    status: string;
+  }> {
+    const list: Array<{
+      title: string;
+      subtitle: string;
+      score: number;
+      date: string;
+      status: string;
+    }> = [];
+
+    // 1. Initial Assessment
+    const initial = this.initialAssessmentResult();
+    if (initial) {
+      list.push({
+        title: 'Test de niveau initial',
+        subtitle: this.portfolioInitialAssessmentLabel,
+        score: Math.max(0, Math.min(100, Math.round(initial.score))),
+        date: initial.completedAt ? new Date(initial.completedAt).toLocaleDateString('fr-FR') : 'Diagnostic EduVia',
+        status: initial.score >= 50 ? 'Validé' : 'À renforcer',
+      });
+    }
+
+    // 2. Course quizzes taken from local storage or progress
+    const seen = new Set<string>();
+    this.allVisibleContents
+      .filter(item => this.isQuiz(item))
+      .forEach(quiz => {
+        const attempt = this.findAnyStoredQuizResult(quiz._id || '', quiz);
+        if (attempt && typeof attempt.score === 'number') {
+          const title = this.cleanEncoding(quiz.title || quiz.courseId || 'Quiz');
+          if (!seen.has(title)) {
+            seen.add(title);
+            list.push({
+              title,
+              subtitle: quiz.courseId ? `Cours : ${this.cleanEncoding(quiz.courseId)}` : 'Évaluation de cours',
+              score: Math.max(0, Math.min(100, Math.round(attempt.score))),
+              date: new Date().toLocaleDateString('fr-FR'),
+              status: (attempt.score >= (quiz.quizPassingScore || 70)) ? 'Réussi' : 'À revoir',
+            });
+          }
+        }
+      });
+
+    // 3. Portfolio remediation quizzes
+    Object.entries(this.portfolioRemediationScores).forEach(([key, attempt]) => {
+      const score = typeof attempt === 'number' ? attempt : attempt?.score ?? 0;
+      const cleanKey = this.cleanEncoding(key);
+      if (!seen.has(cleanKey)) {
+        seen.add(cleanKey);
+        list.push({
+          title: `Remédiation : ${cleanKey}`,
+          subtitle: 'Quiz ciblé sur point faible',
+          score: Math.max(0, Math.min(100, Math.round(score))),
+          date: new Date().toLocaleDateString('fr-FR'),
+          status: score >= 70 ? 'Maîtrisé' : 'En cours',
+        });
+      }
+    });
+
+    if (list.length === 0) {
+      list.push({
+        title: 'Test de niveau initial',
+        subtitle: 'Diagnostic EduVia - session locale',
+        score: this.initialAssessmentResult()?.score || 0,
+        date: new Date().toLocaleDateString('fr-FR'),
+        status: 'En attente',
+      });
+    }
+
+    return list;
+  }
+
+  get portfolioAverageScore(): number {
+    const list = this.portfolioQuizHistory.filter(q => q.status !== 'En attente' || q.score > 0);
+    if (list.length > 0) {
+      const sum = list.reduce((acc, curr) => acc + curr.score, 0);
+      return Math.round(sum / list.length);
+    }
+    const scores = this.collectStoredQuizScores();
+    if (scores.length > 0) {
+      return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+    }
+    if (this.recommendationAnalysis?.summary?.averageScore) {
+      return Math.round(this.recommendationAnalysis.summary.averageScore);
+    }
+    return this.dashboardProgressPercent || 0;
   }
 
   get portfolioCompletedCourses() {
@@ -2725,34 +2884,100 @@ export class StudentDashboard implements OnInit, OnDestroy {
   }
 
   get portfolioQuizTraceCount() {
-    return this.initialAssessmentResult() ? 1 : 0;
+    return this.portfolioQuizHistory.length;
   }
 
   get portfolioWeakLabels() {
-    return (this.initialAssessmentResult()?.weaknesses || []).slice(0, 6).join(', ');
+    return (this.portfolioWeaknesses || []).slice(0, 6).join(', ');
   }
 
-  get portfolioStrengths() {
+  get portfolioStrengths(): string[] {
+    const strengths: string[] = [];
     const assessmentStrengths = this.initialAssessmentResult()?.strengths || [];
-    if (assessmentStrengths.length > 0) {
-      return assessmentStrengths.slice(0, 6);
+    assessmentStrengths.forEach(s => {
+      const clean = this.cleanEncoding(s).trim();
+      if (clean && !strengths.includes(clean)) strengths.push(clean);
+    });
+
+    // Courses with good progress
+    this.courseCatalog
+      .filter(c => c.progress >= 40 && c.title.toLowerCase() !== 'test')
+      .forEach(c => {
+        const label = `${this.cleanEncoding(c.title)} (${c.progress}% maîtrisé - ${c.completedItems}/${c.totalItems} éléments)`;
+        if (!strengths.includes(label)) strengths.push(label);
+      });
+
+    // Quizzes passed
+    this.allVisibleContents
+      .filter(item => this.isQuiz(item))
+      .forEach(quiz => {
+        const attempt = this.findAnyStoredQuizResult(quiz._id || '', quiz);
+        if (attempt && (attempt.score ?? 0) >= 70) {
+          const label = `${this.cleanEncoding(quiz.title)} (${attempt.score}%)`;
+          if (!strengths.includes(label)) strengths.push(label);
+        }
+      });
+
+    if (strengths.length === 0) {
+      if (this.courseCatalog.length > 0) {
+        strengths.push(`Inscrit dans ${this.courseCatalog.length} cours actifs`);
+      }
+      strengths.push(`Niveau actuel : ${this.studentProfile.levelLabel}`);
+      strengths.push('Motivation et régularité sur la plateforme');
     }
 
-    return [];
+    return strengths.slice(0, 6);
   }
 
-  get portfolioWeaknesses() {
-    return this.initialAssessmentResult()?.weaknesses || [];
+  get portfolioWeaknesses(): string[] {
+    const weaknesses: string[] = [];
+    const assessmentWeaknesses = this.initialAssessmentResult()?.weaknesses || [];
+    assessmentWeaknesses.forEach(w => {
+      const clean = this.cleanEncoding(w).trim();
+      if (clean && clean.toLowerCase() !== 'test' && !weaknesses.includes(clean)) weaknesses.push(clean);
+    });
+
+    // Weak cards
+    this.portfolioWeakCards.forEach(c => {
+      const label = this.cleanEncoding(c.label || c.chapterId || '').trim();
+      if (label && label.toLowerCase() !== 'test' && !weaknesses.includes(label)) {
+        weaknesses.push(`${c.courseId ? this.cleanEncoding(c.courseId) + ' : ' : ''}${label}`);
+      }
+    });
+
+    // Courses in progress < 40%
+    this.courseCatalog
+      .filter(c => c.progress < 40 && c.title.toLowerCase() !== 'test')
+      .forEach(c => {
+        const label = `${this.cleanEncoding(c.title)} (${c.progress}% complété - ${c.totalItems - c.completedItems} éléments restants)`;
+        if (!weaknesses.includes(label)) weaknesses.push(label);
+      });
+
+    // Failed quizzes
+    this.allVisibleContents
+      .filter(item => this.isQuiz(item))
+      .forEach(quiz => {
+        const attempt = this.findAnyStoredQuizResult(quiz._id || '', quiz);
+        if (attempt && (attempt.score ?? 0) < 70) {
+          const label = `Quiz ${this.cleanEncoding(quiz.title)} (${attempt.score}%)`;
+          if (!weaknesses.includes(label)) weaknesses.push(label);
+        }
+      });
+
+    return weaknesses.slice(0, 6);
   }
 
   get portfolioWeakCards(): WeakAcquisItem[] {
+    let cards: WeakAcquisItem[] = [];
     if (this.portfolioWeakAcquis.length > 0) {
-      return this.portfolioWeakAcquis
+      cards = this.portfolioWeakAcquis
         .map((item, index) => {
-          const displayLabel = this.portfolioWeakDisplayLabel(item, index);
+          const displayLabel = this.cleanEncoding(this.portfolioWeakDisplayLabel(item, index));
           return {
             ...item,
             label: displayLabel,
+            courseId: this.cleanEncoding(item.courseId),
+            chapterId: this.cleanEncoding(item.chapterId),
             key: item.key || this.portfolioWeakKey(item, displayLabel, index),
             keywords: [item.label, ...(item.keywords || [])],
           };
@@ -2765,45 +2990,50 @@ export class StudentDashboard implements OnInit, OnDestroy {
           : {
               ...item,
               successRate: attempt.score,
-              reason: `Dernier score du quiz cible sur ${item.label}: ${attempt.score}%.`,
+              reason: `Dernier score du quiz ciblé sur ${item.label}: ${attempt.score}%.`,
             };
       });
+    } else {
+      const assessment = this.initialAssessmentResult();
+      if (assessment) {
+        cards = assessment.weaknesses
+          .map((label, index) => {
+          const cleanLabel = this.cleanEncoding(this.namedInitialWeakness(label, index));
+          const weak: WeakAcquisItem = {
+            key: `initial-${this.normalizeSearchText(label)}-${index}`,
+            label: cleanLabel,
+            severity: 100 - assessment.score,
+            severityLabel: 'À renforcer',
+            incorrectQuestions: 1,
+            totalQuestions: 1,
+            successRate: assessment.score,
+            keywords: [label],
+            courseId: 'Test de niveau initial',
+            chapterId: cleanLabel,
+            reason: `Point faible détecté dans le test de niveau: ${cleanLabel}.`,
+          };
+          const attempt = this.portfolioRemediationAttemptFor(weak);
+          return {
+            ...weak,
+            successRate: attempt?.score ?? weak.successRate,
+            reason: attempt
+              ? `Dernier score du quiz ciblé sur ${weak.label}: ${attempt.score}%.`
+              : weak.reason,
+          };
+        })
+          .filter(item => !this.isPortfolioRemediationPassed(item));
+      }
     }
 
-    const assessment = this.initialAssessmentResult();
-    if (!assessment) {
-      return [];
-    }
-
-    return assessment.weaknesses
-      .map((label, index) => {
-      const weak: WeakAcquisItem = {
-        key: `initial-${this.normalizeSearchText(label)}-${index}`,
-        label: this.namedInitialWeakness(label, index),
-        severity: 100 - assessment.score,
-        severityLabel: 'A renforcer',
-        incorrectQuestions: 1,
-        totalQuestions: 1,
-        successRate: assessment.score,
-        keywords: [label],
-        courseId: 'Test de niveau initial',
-        chapterId: label,
-        reason: `Point faible detecte dans le test de niveau: ${label}.`,
-      };
-      const attempt = this.portfolioRemediationAttemptFor(weak);
-      return {
-        ...weak,
-        successRate: attempt?.score ?? weak.successRate,
-        reason: attempt
-          ? `Dernier score du quiz cible sur ${weak.label}: ${attempt.score}%.`
-          : weak.reason,
-      };
-    })
-      .filter(item => !this.isPortfolioRemediationPassed(item));
+    return cards.filter(item => {
+      const label = (item.label || '').trim().toLowerCase();
+      const course = (item.courseId || '').trim().toLowerCase();
+      return label !== 'test' && course !== 'test';
+    });
   }
 
   get portfolioEvaluationCount() {
-    return this.portfolioQuizTraceCount;
+    return this.portfolioQuizHistory.length;
   }
 
   get portfolioInitialAssessmentDate() {
@@ -2817,16 +3047,24 @@ export class StudentDashboard implements OnInit, OnDestroy {
       return 'Diagnostic EduVia - session locale';
     }
 
-    return `Diagnostic EduVia - ${new Date(result.completedAt).toLocaleDateString('fr-FR')} - ${result.correctCount}/${result.totalQuestions} reponses justes`;
+    return `Diagnostic EduVia - ${new Date(result.completedAt).toLocaleDateString('fr-FR')} - ${result.correctCount}/${result.totalQuestions} réponses justes`;
   }
 
-  get portfolioRecommendations() {
-    const firstWeak = this.initialAssessmentResult()?.weaknesses?.[0] || '';
-    return [
-      firstWeak ? `Refaire le test de niveau ou un quiz cible sur ${firstWeak}` : 'Faire un quiz pour detecter les acquis faibles',
-      'Revoir les points faibles detectes dans le test de niveau initial',
-      'Comparer le prochain score avec le score du test initial',
-    ];
+  get portfolioRecommendations(): string[] {
+    const recs: string[] = [];
+    const weakList = this.portfolioWeaknesses;
+    if (weakList.length > 0) {
+      recs.push(`Priorité : Travailler sur ${weakList[0]}`);
+      if (weakList.length > 1) {
+        recs.push(`Consolider les bases de : ${weakList[1]}`);
+      }
+    }
+    const uncompleted = this.courseCatalog.find(c => c.progress < 100 && c.title.toLowerCase() !== 'test');
+    if (uncompleted) {
+      recs.push(`Poursuivre le cours « ${this.cleanEncoding(uncompleted.title)} » (${uncompleted.progress}% atteint)`);
+    }
+    recs.push('Passer les quiz de chapitre pour valider vos compétences et mettre à jour votre profil');
+    return recs.slice(0, 4);
   }
 
   portfolioCourseResourceCount(courseId: string) {
@@ -3479,6 +3717,21 @@ export class StudentDashboard implements OnInit, OnDestroy {
   }
 
   private filterClientVisibleHierarchy(contents: ContentItem[]): ContentItem[] {
+    contents = contents
+      .filter(item => {
+        const cId = (item.courseId || '').trim().toLowerCase();
+        const title = (item.title || '').trim().toLowerCase();
+        const chId = (item.chapterId || '').trim().toLowerCase();
+        return cId !== 'test' && cId !== 'cours test' && title !== 'test' && title !== 'cours test' && chId !== 'test';
+      })
+      .map(item => ({
+        ...item,
+        title: this.cleanEncoding(item.title),
+        courseId: item.courseId ? this.cleanEncoding(item.courseId) : item.courseId,
+        chapterId: item.chapterId ? this.cleanEncoding(item.chapterId) : item.chapterId,
+        description: item.description ? this.cleanEncoding(item.description) : item.description,
+      }));
+
     const selfVisible = new Map(
       contents.map(item => [this.contentIdentity(item), this.isClientVisibleItem(item)]),
     );
@@ -3989,23 +4242,29 @@ export class StudentDashboard implements OnInit, OnDestroy {
 
     contents.forEach(item => {
       const courseKey = this.courseGroupKey(item);
+      const title = this.courseDisplayTitle(item);
+      if (courseKey === 'test' || title.trim().toLowerCase() === 'test' || title.trim().toLowerCase() === 'cours test') {
+        return;
+      }
       if (!grouped.has(courseKey)) {
         grouped.set(courseKey, {
-          title: this.courseDisplayTitle(item),
+          title: this.cleanEncoding(title),
           descriptions: new Set<string>(),
           items: [],
         });
       }
 
       const bucket = grouped.get(courseKey)!;
-      bucket.title = this.preferredCourseTitle(bucket.title, item);
+      bucket.title = this.cleanEncoding(this.preferredCourseTitle(bucket.title, item));
       if (item.chapterId) {
-        bucket.descriptions.add(item.chapterId);
+        bucket.descriptions.add(this.cleanEncoding(item.chapterId));
       }
       bucket.items.push(item);
     });
 
-    return Array.from(grouped.entries()).map(([id, group], index) => {
+    return Array.from(grouped.entries())
+      .filter(([id, group]) => id !== 'test' && group.title.trim().toLowerCase() !== 'test')
+      .map(([id, group], index) => {
       const visibleQuizzes = group.items.filter(
         item =>
           this.isQuiz(item) &&
@@ -4043,23 +4302,29 @@ export class StudentDashboard implements OnInit, OnDestroy {
 
     contents.forEach(item => {
       const courseKey = this.courseGroupKey(item);
+      const title = this.courseDisplayTitle(item);
+      if (courseKey === 'test' || title.trim().toLowerCase() === 'test' || title.trim().toLowerCase() === 'cours test') {
+        return;
+      }
       if (!grouped.has(courseKey)) {
         grouped.set(courseKey, {
-          title: this.courseDisplayTitle(item),
+          title: this.cleanEncoding(title),
           descriptions: new Set<string>(),
           items: [],
         });
       }
 
       const bucket = grouped.get(courseKey)!;
-      bucket.title = this.preferredCourseTitle(bucket.title, item);
+      bucket.title = this.cleanEncoding(this.preferredCourseTitle(bucket.title, item));
       if (item.chapterId) {
-        bucket.descriptions.add(item.chapterId);
+        bucket.descriptions.add(this.cleanEncoding(item.chapterId));
       }
       bucket.items.push(item);
     });
 
-    return Array.from(grouped.entries()).map(([id, group], index) => {
+    return Array.from(grouped.entries())
+      .filter(([id, group]) => id !== 'test' && group.title.trim().toLowerCase() !== 'test')
+      .map(([id, group], index) => {
       const chapterCount = Math.max(1, group.descriptions.size);
       const trackableItems = group.items.filter(item => this.isTrackableContent(item));
       const itemCount = trackableItems.length;
