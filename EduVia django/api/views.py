@@ -187,22 +187,25 @@ def _build_verification_email_html(user, verification_url, password=None):
     pwd_block = ''
     if password:
         pwd_block = f"""
-        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #8b1538; border-radius: 8px; padding: 18px 22px; margin: 26px 0;">
-            <p style="margin: 0 0 10px 0; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #8b1538;">Vos identifiants de connexion :</p>
-            <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="width: 100%; font-size: 14px; color: #1e293b;">
-                <tr>
-                    <td style="padding: 4px 0; font-weight: 600; width: 140px; color: #475569;">E-mail :</td>
-                    <td style="padding: 4px 0; font-family: monospace; font-size: 14px; color: #0f172a;"><strong>{email}</strong></td>
-                </tr>
-                <tr>
-                    <td style="padding: 4px 0; font-weight: 600; color: #475569;">Mot de passe temporaire :</td>
-                    <td style="padding: 4px 0; font-family: monospace; font-size: 15px; color: #8b1538;"><strong>{html.escape(password)}</strong></td>
-                </tr>
-            </table>
-            <p style="margin: 12px 0 0 0; font-size: 12px; color: #64748b; font-style: italic;">
-                Veuillez modifier ce mot de passe temporaire après votre première connexion pour sécuriser votre compte.
-            </p>
-        </div>
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 5px solid #8b1538; border-radius: 6px; margin: 24px 0;">
+            <tr>
+                <td style="padding: 16px 20px;">
+                    <p style="margin: 0 0 10px 0; font-size: 13px; font-weight: 700; text-transform: uppercase; color: #8b1538; letter-spacing: 0.5px; font-family: Arial, sans-serif;">
+                        Vos identifiants de connexion :
+                    </p>
+                    <p style="margin: 0 0 8px 0; font-size: 14px; color: #334155; font-family: Arial, sans-serif;">
+                        <strong>E-mail :</strong> <span style="color: #0f172a; font-weight: 600;">{email}</span>
+                    </p>
+                    <p style="margin: 0 0 10px 0; font-size: 14px; color: #334155; font-family: Arial, sans-serif;">
+                        <strong>Mot de passe temporaire :</strong>
+                        <span style="display: inline-block; background-color: #ffffff; color: #8b1538; font-weight: 700; font-family: Consolas, Monaco, monospace; font-size: 15px; padding: 4px 10px; border-radius: 4px; border: 1px solid #cbd5e1;">{html.escape(password)}</span>
+                    </p>
+                    <p style="margin: 0; font-size: 12px; color: #64748b; font-style: italic; font-family: Arial, sans-serif;">
+                        Veuillez modifier ce mot de passe temporaire après votre première connexion.
+                    </p>
+                </td>
+            </tr>
+        </table>
         """
 
     return f"""<!DOCTYPE html>
@@ -210,27 +213,27 @@ def _build_verification_email_html(user, verification_url, password=None):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Confirmez votre compte EduVia</title>
+    <title>Confirmation de votre compte EduVia</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #334155; line-height: 1.6;">
-    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f1f5f9; padding: 35px 15px;">
+<body style="margin: 0; padding: 0; background-color: #e2e8f0; font-family: Arial, Helvetica, sans-serif; -webkit-font-smoothing: antialiased;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" bgcolor="#e2e8f0" style="background-color: #e2e8f0; padding: 30px 10px;">
         <tr>
             <td align="center">
-                <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 580px; background-color: #ffffff; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.07); border: 1px solid #e2e8f0;">
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 560px; background-color: #ffffff; border-radius: 10px; overflow: hidden; border: 1px solid #cbd5e1; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);">
                     <tr>
-                        <td align="center" style="background: linear-gradient(135deg, #8b1538 0%, #5c0922 100%); padding: 32px 24px;">
-                            <h1 style="margin: 0; color: #ffffff; font-size: 26px; font-weight: 800; letter-spacing: 0.5px;">EduVia</h1>
-                            <p style="margin: 6px 0 0 0; color: #ffd6df; font-size: 14px; font-weight: 400;">Learn smart, Think EduVia</p>
+                        <td align="center" bgcolor="#8b1538" style="background-color: #8b1538; padding: 26px 20px; text-align: center;">
+                            <h1 style="margin: 0; color: #ffffff !important; font-size: 28px; font-weight: 800; letter-spacing: 1px; font-family: Arial, sans-serif;">EduVia</h1>
+                            <p style="margin: 6px 0 0 0; color: #ffffff !important; font-size: 14px; font-family: Arial, sans-serif; opacity: 0.95;">Learn smart, Think EduVia</p>
                         </td>
                     </tr>
                     <tr>
-                        <td style="padding: 36px 32px 28px 32px;">
-                            <h2 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 700; color: #0f172a;">Bonjour {name},</h2>
-                            <p style="margin: 0 0 16px 0; font-size: 15px; color: #334155;">
+                        <td bgcolor="#ffffff" style="background-color: #ffffff; padding: 32px 28px; color: #1e293b; font-size: 15px; line-height: 1.6;">
+                            <h2 style="margin: 0 0 16px 0; color: #0f172a; font-size: 20px; font-weight: 700; font-family: Arial, sans-serif;">Bonjour {name},</h2>
+                            <p style="margin: 0 0 16px 0; color: #334155; font-size: 15px; font-family: Arial, sans-serif;">
                                 Bienvenue sur <strong>EduVia</strong> ! Votre compte a été créé avec succès par l'administration.
                             </p>
-                            <p style="margin: 0 0 24px 0; font-size: 15px; color: #334155;">
-                                Cliquez sur le bouton ci-dessous pour confirmer votre adresse e-mail. Vous serez automatiquement redirigé vers la page de connexion :
+                            <p style="margin: 0 0 24px 0; color: #334155; font-size: 15px; font-family: Arial, sans-serif;">
+                                Cliquez sur le bouton ci-dessous pour confirmer votre adresse e-mail et accéder directement à la page de connexion :
                             </p>
 
                             <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 28px 0;">
@@ -238,9 +241,9 @@ def _build_verification_email_html(user, verification_url, password=None):
                                     <td align="center">
                                         <table role="presentation" border="0" cellpadding="0" cellspacing="0">
                                             <tr>
-                                                <td align="center" style="border-radius: 8px; background: linear-gradient(135deg, #8b1538 0%, #b81c47 100%); box-shadow: 0 4px 12px rgba(139, 21, 56, 0.35);">
-                                                    <a href="{verification_url}" target="_blank" style="display: inline-block; padding: 15px 36px; font-size: 16px; font-weight: 700; color: #ffffff; text-decoration: none; border-radius: 8px; letter-spacing: 0.3px;">
-                                                        Confirmer mon compte
+                                                <td align="center" bgcolor="#8b1538" style="border-radius: 6px; background-color: #8b1538;">
+                                                    <a href="{verification_url}" target="_blank" style="background-color: #8b1538; border: 12px solid #8b1538; font-family: Arial, sans-serif; font-size: 16px; color: #ffffff !important; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; padding: 4px 22px; text-align: center;">
+                                                        <span style="color: #ffffff !important; text-decoration: none; font-weight: bold;">Confirmer mon compte</span>
                                                     </a>
                                                 </td>
                                             </tr>
@@ -251,14 +254,13 @@ def _build_verification_email_html(user, verification_url, password=None):
 
                             {pwd_block}
 
-                            <p style="margin: 24px 0 0 0; font-size: 13px; color: #64748b; line-height: 1.5;">
-                                <strong>Note :</strong> Ce lien est valable pendant 24 heures. Si le bouton ne s'affiche pas correctement, vous pouvez copier et coller ce lien dans votre navigateur :<br>
-                                <a href="{verification_url}" style="color: #8b1538; word-break: break-all; font-size: 12px;">{verification_url}</a>
+                            <p style="margin: 24px 0 0 0; font-size: 13px; color: #64748b; text-align: center; font-family: Arial, sans-serif;">
+                                Ce bouton de confirmation est valable pendant 24 heures.
                             </p>
                         </td>
                     </tr>
                     <tr>
-                        <td align="center" style="background-color: #f8fafc; padding: 22px 24px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #94a3b8;">
+                        <td align="center" bgcolor="#f8fafc" style="background-color: #f8fafc; padding: 18px 20px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; text-align: center; font-family: Arial, sans-serif;">
                             <p style="margin: 0;">© 2026 EduVia • Plateforme d'apprentissage et de formation</p>
                         </td>
                     </tr>
@@ -373,8 +375,7 @@ def _send_system_email(recipient_email, subject, body_text, html_body=None):
 def _send_verification_email(user, password=None, request=None):
     verification_url = _verification_url(user, request=request)
     lines = [f"Bonjour {user.first_name or user.username},", '',
-             'Confirmez votre adresse e-mail en ouvrant ce lien (valable 24 heures) :',
-             verification_url]
+             "Bienvenue sur EduVia ! Veuillez confirmer votre adresse e-mail en cliquant sur le bouton « Confirmer mon compte » présent dans cet e-mail."]
     if password:
         lines.extend(['', f'Identifiant : {user.email}', f'Mot de passe temporaire : {password}',
                       'Veuillez modifier ce mot de passe après votre première connexion.'])
