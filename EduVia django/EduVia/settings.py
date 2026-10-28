@@ -110,6 +110,16 @@ DATABASES = {
         'NAME': os.environ.get('MONGODB_NAME', 'eduvia'),
         'CONN_MAX_AGE': int(os.environ.get('CONN_MAX_AGE', '600')),
         'CONN_HEALTH_CHECKS': True,
+        'OPTIONS': {
+            'minPoolSize': 2,
+            'maxPoolSize': 50,
+            'maxIdleTimeMS': 45000,
+            'connectTimeoutMS': 5000,
+            'serverSelectionTimeoutMS': 5000,
+            'socketTimeoutMS': 15000,
+            'retryWrites': True,
+            'retryReads': True,
+        },
     }
 }
 
