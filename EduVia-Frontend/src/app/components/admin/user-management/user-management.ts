@@ -411,9 +411,15 @@ export class UserManagement implements OnInit, OnDestroy {
         this.closeAddUserDialog();
         this.loadUsers();
         const result = response?.data ?? response;
-        this.openSuccessModal(result?.emailSent
-          ? 'Utilisateur créé. E-mail de confirmation envoyé.'
-          : 'Utilisateur créé, mais l’e-mail n’a pas été envoyé. Vérifiez la configuration SMTP Django.');
+        if (result?.emailSent) {
+          this.openSuccessModal('Utilisateur créé. E-mail de confirmation envoyé.');
+        } else {
+          const reason = result?.emailError ? ` Cause : ${result.emailError}.` : '';
+          const credentials = result?.temporaryPassword
+            ? ` Transmettez ces identifiants manuellement — Identifiant : ${email} / Mot de passe temporaire : ${result.temporaryPassword}`
+            : '';
+          this.openSuccessModal(`Utilisateur créé, mais l’e-mail n’a pas été envoyé.${reason}${credentials}`);
+        }
       },
       error: (error) => {
         console.error('Erreur lors de la creation:', error);

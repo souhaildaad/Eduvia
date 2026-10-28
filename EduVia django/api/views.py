@@ -3144,11 +3144,23 @@ def api(request, path=''):
                     user_role=body.get('role', 'student'), class_name=body.get('className', ''),
                     assigned_classes=body.get('assignedClasses', []), teaching_subjects=body.get('teachingSubjects', []),
                     teaching_assignments=body.get('teachingAssignments', []))
+                generated_password = not body.get('password')
+                email_error = ''
                 try:
-                    sent = _send_verification_email(new_user, password if not body.get('password') else None)
-                except Exception:
+                    sent = _send_verification_email(new_user, password if generated_password else None)
+                    if not sent:
+                        email_error = "Le serveur Django utilise le backend console (variables EMAIL_HOST / EMAIL_HOST_USER / EMAIL_HOST_PASSWORD absentes)."
+                except Exception as exc:
+                    logger.exception('Verification email delivery failed for %s', new_user.email)
                     sent = 0
-                return _response({**_profile(new_user), 'emailSent': bool(sent)})
+                    email_error = f'{type(exc).__name__}: {exc}'[:300]
+                payload = {**_profile(new_user), 'emailSent': bool(sent)}
+                if not sent:
+                    payload['emailError'] = email_error
+                    if generated_password:
+                        # Let the admin hand over the credentials manually when the e-mail could not be delivered.
+                        payload['temporaryPassword'] = password
+                return _response(payload)
             if len(parts) > 2:
                 target = User.objects.filter(pk=parts[2]).first()
                 if target and request.method in ('PATCH', 'PUT'):
