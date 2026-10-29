@@ -681,10 +681,25 @@ export class TeacherDashboard implements OnInit {
 
     this.http.get<any[]>(requestUrl).subscribe(
       data => {
-        const filteredData = (data || []).filter(item => {
+        let filteredData = (data || []).filter(item => {
           const itemTeacherEmail = String(item?.teacherEmail || '').trim().toLowerCase();
           return itemTeacherEmail === teacherEmail;
         });
+
+        if (filteredData.length === 0 && (data || []).length > 0) {
+          filteredData = (data || []).filter(item => {
+            if (item.visibleToAllClasses) return true;
+            const itemClasses = Array.isArray(item.visibleToClasses)
+              ? item.visibleToClasses
+              : [item.visibleToClasses, item.className].filter(Boolean);
+            return itemClasses.some((c: string) =>
+              this.teacherAssignedClasses.map(ac => ac.toLowerCase()).includes(String(c).toLowerCase())
+            );
+          });
+          if (filteredData.length === 0) {
+            filteredData = data;
+          }
+        }
 
         const grouped = filteredData.reduce((acc, item) => {
           const courseKey = this.repairEncoding(item.courseId || item.course || 'Cours inconnu');

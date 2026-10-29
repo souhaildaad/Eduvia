@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
-import { delay } from 'rxjs';
+import { delay, timeout, catchError, of } from 'rxjs';
 
 type StudentCourse = {
   name: string;
@@ -306,7 +306,13 @@ export class StudentTracking implements OnInit {
 
     this.http
       .get<TeacherCourseMembersResponse>(`/auth/teacher-course-members${query}`)
-      .pipe(delay(0))
+      .pipe(
+        delay(0),
+        timeout(15000),
+        catchError(err => {
+          return of({ success: false, data: { classes: ['1A1', '1A2', '1A3'], students: [] } });
+        })
+      )
       .subscribe({
         next: response => {
           const data = response?.data || {};

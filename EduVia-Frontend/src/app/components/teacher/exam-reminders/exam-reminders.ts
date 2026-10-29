@@ -3,7 +3,7 @@ import { HttpClient, HttpClientModule } from '@angular/common/http';
 import { ChangeDetectorRef, Component, Input, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatIconModule } from '@angular/material/icon';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, timeout } from 'rxjs';
 import { NotificationService } from '../../../services/notification.service';
 
 type TeacherContentItem = {
@@ -390,9 +390,9 @@ export class ExamReminders implements OnInit {
       ? `?${new URLSearchParams({ teacherEmail: this.teacherEmail }).toString()}`
       : '';
     Promise.all([
-      firstValueFrom(this.http.get<TeacherExamRemindersResponse>('/auth/teacher-exam-reminders')).catch(() => null),
-      firstValueFrom(this.http.get<TeacherCourseMembersResponse>('/auth/teacher-course-members')).catch(() => null),
-      firstValueFrom(this.http.get<TeacherContentItem[]>(`/api/contents${query}`)).catch(() => []),
+      firstValueFrom(this.http.get<TeacherExamRemindersResponse>('/auth/teacher-exam-reminders').pipe(timeout(15000))).catch(() => null),
+      firstValueFrom(this.http.get<TeacherCourseMembersResponse>('/auth/teacher-course-members').pipe(timeout(15000))).catch(() => null),
+      firstValueFrom(this.http.get<TeacherContentItem[]>(`/api/contents${query}`).pipe(timeout(15000))).catch(() => []),
     ])
       .then(([remindersResponse, studentResponse, contents]) => {
         const backendExams = Array.isArray(remindersResponse?.data?.exams)

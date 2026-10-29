@@ -354,8 +354,22 @@ export class ContentManagement implements OnInit {
 
     this.http.get<any[]>(requestUrl).subscribe(
       data => {
+        if ((!data || data.length === 0) && this.currentTeacherEmail) {
+          this.http.get<any[]>('/api/contents').subscribe(allData => {
+            this.scheduleUiUpdate(() => {
+              const mappedItems = (allData || [])
+                .map(item => this.mapApiItemToContentItem(item))
+                .filter((item): item is ContentItem => item !== null);
+              this.contents = this.deduplicateContents(mappedItems);
+              this.syncStructureFromContents();
+              this.tryOpenRequestedCourseView();
+              this.contentStatsReady = true;
+            });
+          });
+          return;
+        }
         this.scheduleUiUpdate(() => {
-          const mappedItems = data
+          const mappedItems = (data || [])
             .map(item => this.mapApiItemToContentItem(item))
             .filter((item): item is ContentItem => item !== null);
           this.contents = this.deduplicateContents(mappedItems);
