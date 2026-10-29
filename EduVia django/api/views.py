@@ -496,6 +496,10 @@ def _save_record(collection, data, user=None, public_id=None):
     if collection == 'contents' and 'teacherAvatarDataUrl' in payload:
         if len(str(payload.get('teacherAvatarDataUrl') or '')) > 500:
             payload.pop('teacherAvatarDataUrl', None)
+    if collection == 'student/forum/requests':
+        payload.pop('messages', None)
+        if len(str(payload.get('authorAvatarDataUrl') or '')) > 500:
+            payload['authorAvatarDataUrl'] = '' 
     record, _ = Resource.objects.update_or_create(collection=collection, public_id=public_id,
         defaults={'payload': payload, 'owner': user})
     _invalidate_caches(collection=collection, user_id=user.pk if user else None)
