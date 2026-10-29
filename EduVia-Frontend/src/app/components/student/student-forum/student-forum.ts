@@ -12,9 +12,11 @@ import { VoicePlaybackService } from '../../../services/voice-playback.service';
 type HelpRequest = {
   id: string;
   author: string;
+  authorName?: string;
   authorAvatarDataUrl?: string;
   level: string;
   title: string;
+  subject?: string;
   message: string;
   time: string;
   replies: number;
@@ -41,6 +43,7 @@ type ForumAttachment = {
   name: string;
   mimeType?: string;
   dataUrl: string;
+  fileUrl?: string;
 };
 
 @Component({
@@ -76,6 +79,7 @@ export class StudentForum implements OnInit, OnDestroy {
   screenReaderMessage = '';
   loading = false;
   chatLoading = false;
+  chatSending = false;
   submitting = false;
   errorMessage = '';
   successMessage = '';
@@ -225,12 +229,26 @@ export class StudentForum implements OnInit, OnDestroy {
     return this.consultHighlightId === requestId;
   }
 
+  get myRequestsCount() {
+    return this.requests.filter(request => request.isMine).length;
+  }
+
+  get totalRequestsCount() {
+    return this.requests.length;
+  }
+
   get openQuestionsCount() {
-    return this.stats.openQuestions;
+    if (typeof this.stats?.openQuestions === 'number' && this.stats.openQuestions > 0) {
+      return this.stats.openQuestions;
+    }
+    return this.requests.filter(r => r.status !== 'En discussion').length;
   }
 
   get repliesTodayCount() {
-    return this.stats.repliesToday;
+    if (typeof this.stats?.repliesToday === 'number' && this.stats.repliesToday > 0) {
+      return this.stats.repliesToday;
+    }
+    return this.requests.reduce((sum, r) => sum + (Number(r.replies) || 0), 0);
   }
 
   get resolutionRate() {
@@ -354,18 +372,29 @@ export class StudentForum implements OnInit, OnDestroy {
   }
 
   openChat(request: HelpRequest) {
-    this.openedChatRequest = request;
+    const authorName = request.author || (request as any).authorName || 'Étudiant';
+    const messageText = request.message || (request as any).content || '';
+    const reqTime = request.time || '10:00';
+    const reqLevel = this.classLabel(request.level);
+
+    this.openedChatRequest = {
+      ...request,
+      author: authorName,
+      message: messageText,
+      time: reqTime,
+    };
     this.chatDraft = '';
     this.chatAttachment = null;
+    this.chatSending = false;
     this.chatMessages = [
       {
-        id: `temp-${request.id}`,
+        id: `initial-${request.id}`,
         senderType: 'request',
-        senderName: request.author,
+        senderName: authorName,
         senderAvatarDataUrl: request.authorAvatarDataUrl,
-        senderLevel: this.classLabel(request.level),
-        text: request.message,
-        time: request.time,
+        senderLevel: reqLevel,
+        text: messageText,
+        time: reqTime,
       },
     ];
     this.chatLoading = true;
@@ -389,6 +418,7 @@ export class StudentForum implements OnInit, OnDestroy {
     this.chatAttachment = null;
     this.chatMessages = [];
     this.chatErrorMessage = '';
+    this.chatSending = false;
     this.closeVideoRecorder();
     if (this.chatRefreshIntervalId !== null) {
       window.clearInterval(this.chatRefreshIntervalId);
@@ -406,16 +436,25 @@ export class StudentForum implements OnInit, OnDestroy {
 
   sendChatMessage() {
     const text = this.chatDraft.trim();
-    if ((!text && !this.chatAttachment) || !this.openedChatRequest) {
+    if ((!text && !this.chatAttachment) || !this.openedChatRequest || this.chatSending) {
       return;
     }
 
     const requestId = this.openedChatRequest.id;
+    const authorName = this.openedChatRequest.author || 'Étudiant';
+    const messageText = this.openedChatRequest.message || '';
+    const reqTime = this.openedChatRequest.time || '10:00';
+    const reqLevel = this.classLabel(this.openedChatRequest.level);
+
     const payload = {
-      message: text || this.videoTranscript || this.chatAttachment?.name || '',
+      message: text || this.videoTranscript || this.chatAttachment?.name || 'Réponse vidéo enregistrée.',
       attachments: this.chatAttachment ? [this.chatAttachment] : [],
       transcript: this.videoTranscript,
     };
+
+    this.chatSending = true;
+    this.chatErrorMessage = '';
+
     this.http
       .post<{ request: HelpRequest; messages: ForumChatMessage[] }>(
         `/api/student/forum/requests/${requestId}/chat/messages`,
@@ -423,16 +462,30 @@ export class StudentForum implements OnInit, OnDestroy {
       )
       .subscribe({
         next: response => {
-          this.chatMessages = Array.isArray(response.messages)
-            ? response.messages
-            : this.chatMessages;
+          this.chatSending = false;
+          const initialMessage: ForumChatMessage = {
+            id: `initial-${requestId}`,
+            senderType: 'request',
+            senderName: authorName,
+            senderAvatarDataUrl: this.openedChatRequest?.authorAvatarDataUrl,
+            senderLevel: reqLevel,
+            text: messageText,
+            time: reqTime,
+          };
+
+          const rawBackendMessages = Array.isArray(response.messages) ? response.messages : [];
+          const repliesOnly = rawBackendMessages.filter(m => m.id !== initialMessage.id && m.text !== initialMessage.text);
+          this.chatMessages = [initialMessage, ...repliesOnly];
+
           this.chatDraft = '';
           this.chatAttachment = null;
           this.videoTranscript = '';
+          this.videoPreviewUrl = '';
           this.loadRequests();
         },
-        error: () => {
-          this.errorMessage = "Echec d'envoi du message.";
+        error: err => {
+          this.chatSending = false;
+          this.chatErrorMessage = err?.error?.message || "Échec d'envoi du message. Veuillez réessayer.";
         },
       });
   }
@@ -1047,15 +1100,29 @@ export class StudentForum implements OnInit, OnDestroy {
       )
       .subscribe({
         next: response => {
-          const nextMessages = Array.isArray(response.messages)
-            ? response.messages
-            : this.chatMessages;
-          this.chatMessages = nextMessages;
+          const authorName = this.openedChatRequest?.author || (response.request as any)?.author || 'Étudiant';
+          const messageText = this.openedChatRequest?.message || (response.request as any)?.message || '';
+          const reqTime = this.openedChatRequest?.time || (response.request as any)?.time || '10:00';
+          const reqLevel = this.classLabel(this.openedChatRequest?.level || (response.request as any)?.level);
+
+          const initialMessage: ForumChatMessage = {
+            id: `initial-${requestId}`,
+            senderType: 'request',
+            senderName: authorName,
+            senderAvatarDataUrl: this.openedChatRequest?.authorAvatarDataUrl || response.request?.authorAvatarDataUrl,
+            senderLevel: reqLevel,
+            text: messageText,
+            time: reqTime,
+          };
+
+          const rawBackendMessages = Array.isArray(response.messages) ? response.messages : [];
+          const repliesOnly = rawBackendMessages.filter(m => m.id !== initialMessage.id && m.text !== initialMessage.text);
+          this.chatMessages = [initialMessage, ...repliesOnly];
           this.chatLoading = false;
           this.loadRequests({ silent: true });
 
-          const expectedReplies = Number(this.openedChatRequest?.replies || 0);
-          const loadedReplies = Math.max(0, nextMessages.length - 1);
+          const expectedReplies = Number(this.openedChatRequest?.replies || response.request?.replies || 0);
+          const loadedReplies = repliesOnly.length;
           if (retryIfIncomplete && expectedReplies > 0 && loadedReplies < expectedReplies) {
             window.setTimeout(() => {
               if (this.openedChatRequest?.id === requestId) {
@@ -1066,7 +1133,7 @@ export class StudentForum implements OnInit, OnDestroy {
         },
         error: () => {
           this.chatLoading = false;
-          this.chatErrorMessage = "Impossible de charger les autres reponses.";
+          // Keep whatever is currently in chatMessages so the user never sees an empty screen
         },
       });
   }

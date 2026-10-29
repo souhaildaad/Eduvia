@@ -3114,19 +3114,44 @@ def _domain_api(request, body, parts, user):
                 for r in req_qs:
                     p = r.payload or {}
                     is_mine = r.owner_id == user.pk or str(p.get('authorEmail') or '').casefold() == user.email.casefold()
+                    author_name = str(p.get('author') or p.get('authorName') or 'Étudiant').strip()
+                    title = str(p.get('title') or p.get('subject') or 'Question sans titre').strip()
+                    msg = str(p.get('message') or p.get('content') or '').strip()
+                    time_val = str(p.get('time') or '').strip()
+                    if not time_val and p.get('createdAt'):
+                        try:
+                            time_val = p.get('createdAt')[11:16]
+                        except Exception:
+                            time_val = ''
+                    if not time_val:
+                        time_val = r.created_at.strftime('%H:%M') if r.created_at else '10:00'
+
+                    replies_count = int(p.get('replies') or 0)
+                    if replies_count == 0 and isinstance(p.get('messages'), list):
+                        replies_count = len(p['messages'])
+
                     requests_list.append({
                         **p,
                         'id': r.public_id,
                         '_id': r.public_id,
+                        'author': author_name,
+                        'authorName': author_name,
+                        'title': title,
+                        'subject': title,
+                        'message': msg,
+                        'time': time_val,
+                        'replies': replies_count,
                         'canDelete': is_mine,
                         'isMine': is_mine,
                     })
                 open_q = sum(1 for item in requests_list if item.get('status') != 'En discussion')
+                total_replies = sum(int(item.get('replies') or 0) for item in requests_list)
                 return JsonResponse({
                     'requests': requests_list,
                     'stats': {
                         'openQuestions': open_q,
-                        'repliesToday': sum(int(item.get('replies') or 0) for item in requests_list),
+                        'totalQuestions': len(requests_list),
+                        'repliesToday': total_replies,
                         'resolutionRate': round((len(requests_list) - open_q) * 100 / len(requests_list)) if requests_list else 100,
                     },
                 })
@@ -3134,12 +3159,14 @@ def _domain_api(request, body, parts, user):
                 subject = str(body.get('subject') or body.get('title') or 'Question').strip()
                 msg_text = str(body.get('message') or '').strip()
                 now = timezone.now().strftime('%H:%M')
+                author_name = user.get_full_name() or user.username or 'Étudiant'
                 rec = _save_record('student/forum/requests', {
-                    'author': user.get_full_name() or user.username,
+                    'author': author_name,
+                    'authorName': author_name,
                     'authorEmail': user.email,
                     'authorAvatarDataUrl': user.avatar or '',
-                    'level': user.class_name or user.level or 'Etudiant',
-                    'authorLevel': user.class_name or user.level or 'Etudiant',
+                    'level': user.class_name or user.level or '1A',
+                    'authorLevel': user.class_name or user.level or '1A',
                     'title': subject,
                     'subject': subject,
                     'message': msg_text,
@@ -3147,7 +3174,13 @@ def _domain_api(request, body, parts, user):
                     'replies': 0,
                     'status': 'En attente',
                 }, user)
-                req_dict = {**_resource_dict(rec), 'canDelete': True, 'isMine': True}
+                req_dict = {
+                    **_resource_dict(rec),
+                    'author': author_name,
+                    'authorName': author_name,
+                    'canDelete': True,
+                    'isMine': True,
+                }
                 return JsonResponse({'request': req_dict}, status=201)
             if len(parts) == 5 and request.method == 'DELETE':
                 rec = req_qs.filter(public_id=parts[4]).first()
@@ -3163,33 +3196,95 @@ def _domain_api(request, body, parts, user):
                     public_id=rec.public_id,
                     defaults={'owner': rec.owner, 'payload': {'messages': []}},
                 )
+
+                messages = chat.payload.get('messages') or []
+                if not messages and isinstance(rec.payload.get('messages'), list) and rec.payload.get('messages'):
+                    messages = list(rec.payload['messages'])
+                    chat.payload['messages'] = messages
+                    chat.save(update_fields=['payload', 'updated_at'])
+
+                p = rec.payload or {}
+                author_name = str(p.get('author') or p.get('authorName') or 'Étudiant').strip()
+                title = str(p.get('title') or p.get('subject') or 'Question').strip()
+                msg = str(p.get('message') or p.get('content') or '').strip()
+                time_val = str(p.get('time') or '').strip()
+                if not time_val and p.get('createdAt'):
+                    try:
+                        time_val = p.get('createdAt')[11:16]
+                    except Exception:
+                        time_val = ''
+                if not time_val:
+                    time_val = rec.created_at.strftime('%H:%M') if rec.created_at else '10:00'
+
+                req_dict = {
+                    **_resource_dict(rec),
+                    'author': author_name,
+                    'authorName': author_name,
+                    'title': title,
+                    'subject': title,
+                    'message': msg,
+                    'time': time_val,
+                }
+
                 if len(parts) == 6 and request.method == 'GET':
-                    return JsonResponse({'request': _resource_dict(rec), 'messages': chat.payload.get('messages', [])})
+                    return JsonResponse({'request': req_dict, 'messages': messages})
                 if len(parts) == 7 and parts[6] == 'messages' and request.method == 'POST':
                     now = timezone.now().strftime('%H:%M')
+                    sender_name = user.get_full_name() or user.username or 'Étudiant'
+                    attachments_raw = body.get('attachments') if isinstance(body.get('attachments'), list) else []
+                    processed_attachments = []
+                    for att in attachments_raw:
+                        if not isinstance(att, dict):
+                            continue
+                        data_url = str(att.get('dataUrl') or '')
+                        # If dataUrl is a base64 video or large file, persist to disk for fast playback and small DB footprint!
+                        if data_url.startswith('data:') and len(data_url) > 50000:
+                            try:
+                                header, encoded = data_url.split(',', 1)
+                                mime = header.split(';')[0].replace('data:', '')
+                                ext = 'webm' if 'webm' in mime else 'mp4' if 'mp4' in mime else 'png' if 'png' in mime else 'bin'
+                                file_name = f"video_{uuid.uuid4().hex[:12]}.{ext}"
+                                upload_dir = Path(settings.MEDIA_ROOT) / 'forum_attachments'
+                                upload_dir.mkdir(parents=True, exist_ok=True)
+                                file_path = upload_dir / file_name
+                                file_path.write_bytes(base64.b64decode(encoded))
+                                file_url = f"/uploads/forum_attachments/{file_name}"
+                                processed_attachments.append({
+                                    'kind': att.get('kind') or ('video' if 'video' in mime else 'file'),
+                                    'name': att.get('name') or file_name,
+                                    'mimeType': mime,
+                                    'dataUrl': file_url,
+                                    'fileUrl': file_url,
+                                })
+                                continue
+                            except Exception as ex:
+                                pass
+                        processed_attachments.append(att)
+
                     message = {
                         'id': str(uuid.uuid4()),
                         'senderType': 'author' if rec.owner_id == user.pk else 'helper',
-                        'senderName': user.get_full_name() or user.username,
+                        'senderName': sender_name,
                         'senderEmail': user.email,
-                        'senderLevel': user.class_name or user.level or 'Etudiant',
+                        'senderLevel': user.class_name or user.level or 'Étudiant',
                         'text': str(body.get('message') or '').strip(),
-                        'attachments': body.get('attachments') if isinstance(body.get('attachments'), list) else [],
+                        'attachments': processed_attachments,
                         'transcript': str(body.get('transcript') or ''),
                         'time': now,
                     }
                     if not message['text'] and not message['attachments']:
                         return JsonResponse({'success': False, 'message': 'Message vide'}, status=400)
-                    messages = chat.payload.get('messages', [])
+
                     messages.append(message)
                     chat.payload['messages'] = messages
                     chat.save(update_fields=['payload', 'updated_at'])
-                    if rec.owner_id != user.pk:
-                        rec.payload['replies'] = int(rec.payload.get('replies') or 0) + 1
-                        rec.payload['lastResponderName'] = user.get_full_name() or user.username
-                        rec.payload['status'] = 'En discussion'
-                        rec.save(update_fields=['payload', 'updated_at'])
-                    return JsonResponse({'request': _resource_dict(rec), 'message': message, 'messages': messages}, status=201)
+
+                    rec.payload['replies'] = int(rec.payload.get('replies') or 0) + 1
+                    rec.payload['lastResponderName'] = sender_name
+                    rec.payload['status'] = 'En discussion'
+                    rec.save(update_fields=['payload', 'updated_at'])
+
+                    return JsonResponse({'request': req_dict, 'message': message, 'messages': messages}, status=201)
     return None
 
 

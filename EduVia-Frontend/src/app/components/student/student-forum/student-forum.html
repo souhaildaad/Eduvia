@@ -38,7 +38,7 @@
       [class.forum-filter-switch__btn--active]="requestFilter === 'others'"
       (click)="setRequestFilter('others')"
     >
-      Tous les demandes
+      Toutes les demandes ({{ totalRequestsCount }})
       <span class="forum-filter-switch__badge" *ngIf="newOthersCount > 0">+{{ newOthersCount }}</span>
     </button>
     <button
@@ -47,7 +47,7 @@
       [class.forum-filter-switch__btn--active]="requestFilter === 'mine'"
       (click)="setRequestFilter('mine')"
     >
-      Mes demandes
+      Mes demandes ({{ myRequestsCount }})
       <span class="forum-filter-switch__badge" *ngIf="newMineCount > 0">+{{ newMineCount }}</span>
     </button>
   </div>
@@ -59,13 +59,18 @@
     </article>
 
     <article class="forum-stat">
+      <strong>{{ totalRequestsCount }}</strong>
+      <span>Total des questions</span>
+    </article>
+
+    <article class="forum-stat">
       <strong>{{ repliesTodayCount }}</strong>
-      <span>Reponses aujourd'hui</span>
+      <span>Réponses enregistrées</span>
     </article>
   </div>
 
   <section class="forum-section">
-    <h3>Demandes d'aide recentes</h3>
+    <h3>Demandes d'aide récentes ({{ filteredRequests.length }})</h3>
     <p class="forum-success" *ngIf="successMessage">{{ successMessage }}</p>
     <p class="forum-error" *ngIf="errorMessage">{{ errorMessage }}</p>
 
@@ -85,7 +90,7 @@
             <span *ngIf="!request.authorAvatarDataUrl">{{ avatarInitials(request.author) }}</span>
           </div>
           <div>
-            <h4>{{ request.author }}</h4>
+            <h4>{{ request.author || request.authorName || 'Étudiant' }}</h4>
             <p *ngIf="classLabel(request.level)">{{ classLabel(request.level) }}</p>
           </div>
         </div>
@@ -112,8 +117,8 @@
       </div>
 
       <div class="forum-request__meta">
-        <span>Heure {{ request.time }}</span>
-        <span>{{ request.replies }} reponses</span>
+        <span *ngIf="request.time"><mat-icon style="font-size: 14px; width: 14px; height: 14px; vertical-align: middle; margin-right: 4px;">schedule</mat-icon>{{ request.time }}</span>
+        <span><mat-icon style="font-size: 14px; width: 14px; height: 14px; vertical-align: middle; margin-right: 4px;">chat_bubble_outline</mat-icon>{{ request.replies || 0 }} {{ (request.replies || 0) > 1 ? 'réponses' : 'réponse' }}</span>
       </div>
 
       <div class="forum-request__status-row">
@@ -141,7 +146,10 @@
   <div class="forum-modal" (click)="$event.stopPropagation()">
     <div class="forum-modal__header">
       <div>
-        <h3>Chat avec {{ request.author }}</h3>
+        <h3>Chat avec {{ request.author || request.authorName || 'l\'auteur' }}</h3>
+        <p *ngIf="request.title || request.subject" style="margin: 4px 0 0 0; font-size: 0.85rem; color: #64748b;">
+          <strong>Sujet :</strong> {{ request.title || request.subject }}
+        </p>
       </div>
       <button type="button" class="forum-close" (click)="closeChat()">X</button>
     </div>
@@ -165,14 +173,19 @@
         >
           <p>{{ message.text }}</p>
           <div class="forum-chat-attachments" *ngIf="message.attachments?.length">
-            <button
-              *ngFor="let attachment of message.attachments"
-              type="button"
-              (click)="openAttachmentPreview(attachment, $event)"
-              class="forum-chat-attachment">
-              <mat-icon>{{ attachment.kind === 'video' ? 'videocam' : 'attach_file' }}</mat-icon>
-              {{ attachment.name }}
-            </button>
+            <div *ngFor="let attachment of message.attachments" class="forum-chat-attachment-item">
+              <div *ngIf="attachment.kind === 'video'" class="forum-chat-video-bubble">
+                <video [src]="attachment.dataUrl || attachment.fileUrl" controls playsinline preload="metadata" style="max-width: 100%; max-height: 240px; border-radius: 8px; margin-top: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);"></video>
+              </div>
+              <button
+                *ngIf="attachment.kind !== 'video'"
+                type="button"
+                (click)="openAttachmentPreview(attachment, $event)"
+                class="forum-chat-attachment">
+                <mat-icon>attach_file</mat-icon>
+                {{ attachment.name }}
+              </button>
+            </div>
           </div>
           <p *ngIf="message.transcript" class="forum-transcript">
             Transcription : {{ message.transcript }}
@@ -196,6 +209,7 @@
           type="text"
           [(ngModel)]="chatDraft"
           (keydown.enter)="sendChatMessage()"
+          [disabled]="chatSending"
           placeholder="Ecrivez votre message..."
         />
         <input
@@ -205,11 +219,12 @@
           (change)="onChatAttachmentSelected($event)"
           accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.png,.jpg,.jpeg"
         />
-        <button type="button" class="forum-composer-plus" (click)="chatFileInput.click()" aria-label="Ajouter un document">
+        <button type="button" class="forum-composer-plus" (click)="chatFileInput.click()" [disabled]="chatSending" aria-label="Ajouter un document">
           <mat-icon>add</mat-icon>
         </button>
-        <button type="button" (click)="sendChatMessage()" aria-label="Envoyer le message">
-          <mat-icon>send</mat-icon>
+        <button type="button" (click)="sendChatMessage()" [disabled]="chatSending || (!chatDraft && !chatAttachment)" aria-label="Envoyer le message" [style.opacity]="chatSending ? '0.6' : '1'">
+          <mat-icon *ngIf="!chatSending">send</mat-icon>
+          <mat-icon *ngIf="chatSending" style="animation: spin 1s linear infinite;">refresh</mat-icon>
         </button>
       </div>
     </div>

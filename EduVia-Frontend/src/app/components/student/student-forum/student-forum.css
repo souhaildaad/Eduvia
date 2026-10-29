@@ -1,8 +1,8 @@
-:host {
-  display: block;
-  width: 100%;
-}
-
+:host {
+  display: block;
+  width: 100%;
+}
+
 .forum-shell {
   display: grid;
   gap: 1.4rem;
@@ -1110,4 +1110,24 @@
   .forum-chat-message__bubble {
     max-width: 100%;
   }
+}
+
+.forum-chat-attachment-item {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.forum-chat-video-bubble video {
+  display: block;
+  width: 100%;
+  max-width: 380px;
+  max-height: 240px;
+  background: #000;
+  border-radius: 8px;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }

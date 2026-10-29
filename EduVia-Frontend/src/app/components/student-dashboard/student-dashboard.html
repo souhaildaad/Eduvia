@@ -738,12 +738,12 @@
           <mat-icon>show_chart</mat-icon>
         </div>
         <div class="portfolio-score-line" *ngFor="let entry of portfolioQuizHistory">
-          <div>
-            <span>{{ entry.title }}</span>
-            <small *ngIf="entry.subtitle" style="display:block;font-size:0.75rem;color:#64748b;margin-top:0.2rem">{{ entry.subtitle }}</small>
+          <div class="portfolio-score-info">
+            <span class="portfolio-score-title">{{ entry.title }}</span>
+            <small *ngIf="entry.subtitle" class="portfolio-score-subtitle">{{ entry.subtitle }}</small>
           </div>
-          <div><i [style.width.%]="entry.score"></i></div>
-          <strong [style.color]="entry.score >= 70 ? '#10b981' : entry.score >= 50 ? '#f59e0b' : '#ef4444'">{{ entry.score }}%</strong>
+          <div class="portfolio-score-track"><i [style.width.%]="entry.score"></i></div>
+          <strong class="portfolio-score-num" [style.color]="entry.score >= 70 ? '#10b981' : entry.score >= 50 ? '#f59e0b' : '#ef4444'">{{ entry.score }}%</strong>
         </div>
       </section>
     </div>
