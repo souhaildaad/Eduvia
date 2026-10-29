@@ -467,9 +467,17 @@ def _clean_encoding(data):
 def _is_test_content(payload):
     if not isinstance(payload, dict):
         return False
-    cid = str(payload.get('courseId') or '').strip().casefold()
+    cid = str(payload.get('courseId') or payload.get('course') or payload.get('courseName') or '').strip().casefold()
     title = str(payload.get('title') or '').strip().casefold()
-    return cid in ('test', 'cours test') or title in ('test', 'cours test')
+    chapter = str(payload.get('chapterId') or payload.get('chapter') or '').strip().casefold()
+    return (
+        cid in ('test', 'cours test') or
+        title in ('test', 'cours test') or
+        cid.startswith('test') or
+        title == 'test' or
+        title.startswith('cours test') or
+        chapter in ('test', 'cours test')
+    )
 
 
 def _resource_dict(record):
@@ -2654,6 +2662,8 @@ def _domain_api(request, body, parts, user):
             visible_contents = []
             for record in _cached_contents_records():
                 content = _resource_dict(record)
+                if _is_test_content(content):
+                    continue
                 allowed_classes = content.get('visibleToClasses') or []
                 if isinstance(allowed_classes, str):
                     allowed_classes = [allowed_classes]

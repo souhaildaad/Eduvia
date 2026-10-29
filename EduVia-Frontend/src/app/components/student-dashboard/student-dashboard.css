@@ -4945,3 +4945,92 @@ background: #f8fafc;
     grid-template-columns: 1fr;
   }
 }
+
+/* Smart Recommendations Hub & Filter Enhancements */
+.rec-ai-generate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.4rem;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #8b1538 0%, #be123c 100%);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(139, 21, 56, 0.28);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.rec-ai-generate-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(139, 21, 56, 0.38);
+}
+.rec-filter-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 1.4rem 0 0.8rem;
+}
+.rec-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.6rem 1.15rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  color: #475569;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.rec-filter-btn mat-icon {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+}
+.rec-filter-btn:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+.rec-filter-btn--active {
+  background: #8b1538 !important;
+  border-color: #8b1538 !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px rgba(139, 21, 56, 0.25);
+}
+.badge--external {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: #ecfdf5 !important;
+  color: #059669 !important;
+  border: 1px solid #a7f3d0 !important;
+  font-weight: 700;
+}
+.badge--ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: #fdf2f8 !important;
+  color: #be185d !important;
+  border: 1px solid #fbcfe8 !important;
+  font-weight: 700;
+}
+.badge--eduvia {
+  background: #eff6ff !important;
+  color: #2563eb !important;
+  border: 1px solid #bfdbfe !important;
+  font-weight: 700;
+}
+.action-button--external {
+  background: #059669 !important;
+}
+.action-button--external:hover {
+  background: #047857 !important;
+}

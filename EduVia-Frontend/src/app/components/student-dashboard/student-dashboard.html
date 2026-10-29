@@ -482,122 +482,170 @@
   </section>
 
   <section *ngIf="activeTab === 'recommendation'" class="embedded-section recommendation-panel-tab">
-    <ng-container *ngIf="recommendationAnalysis as analysis; else recommendationEmpty">
-      <article class="smart-rec-hero">
-        <div class="smart-rec-hero__copy">
-          <span class="smart-rec-kicker">ANALYSE INTELLIGENTE</span>
-          <h2>Recommandations basees sur vos acquis faibles</h2>
-          <p>Recommandations mises a jour a partir de vos derniers quiz.</p>
-          <div class="smart-rec-hero__meta">
-            <span><mat-icon>fact_check</mat-icon>{{ analysis.summary.lastQuizTitle || 'Dernier quiz' }} - {{ analysis.summary.lastScore }}%</span>
-            <span *ngIf="analysis.summary.lastSubmittedAt"><mat-icon>schedule</mat-icon>{{ analysis.summary.lastSubmittedAt | date:'dd/MM/yyyy HH:mm:ss' }}</span>
-            <span><mat-icon>auto_awesome</mat-icon>Mise a jour {{ analysis.summary.updatedAt | date:'dd/MM/yyyy HH:mm:ss' }}</span>
-          </div>
+    <article class="smart-rec-hero">
+      <div class="smart-rec-hero__copy">
+        <span class="smart-rec-kicker">CENTRE DE RECOMMANDATIONS INTELLIGENTES</span>
+        <h2>Parcours & Recommandations ciblées</h2>
+        <p>Suggestions personnalisées : cours et quiz de la plateforme EduVia, sélection certifiée du Web et génération de Quiz IA sur vos points à consolider.</p>
+        <div class="smart-rec-hero__meta">
+          <span><mat-icon>school</mat-icon>Niveau {{ studentProfile.levelLabel }}</span>
+          <span *ngIf="recommendationAnalysis?.summary?.lastQuizTitle"><mat-icon>fact_check</mat-icon>{{ recommendationAnalysis?.summary?.lastQuizTitle }} - {{ recommendationAnalysis?.summary?.lastScore }}%</span>
+          <span><mat-icon>auto_awesome</mat-icon>Recommandations adaptatives actives</span>
         </div>
+        <div class="smart-rec-hero__actions" style="margin-top: 0.5rem;">
+          <button type="button" class="rec-ai-generate-btn" (click)="generateAiRecommendationQuiz()">
+            <mat-icon>auto_awesome</mat-icon>
+            Générer un Quiz IA ciblé
+          </button>
+        </div>
+      </div>
 
-        <div class="smart-rec-stats">
-          <div class="smart-rec-stat">
-            <strong>{{ analysis.summary.attemptsAnalyzed }}</strong>
-            <span>quiz analyse(s)</span>
-          </div>
-          <div class="smart-rec-stat">
-            <strong>{{ analysis.summary.averageScore }}%</strong>
-            <span>moyenne recente</span>
-          </div>
-          <div class="smart-rec-stat">
-            <strong>{{ analysis.summary.weakAcquisCount }}</strong>
-            <span>acquis faible(s)</span>
-          </div>
-          <div class="smart-rec-stat">
-            <strong>{{ analysis.summary.recommendationCount }}</strong>
-            <span>ressource(s) ciblee(s)</span>
-          </div>
+      <div class="smart-rec-stats">
+        <div class="smart-rec-stat">
+          <strong>{{ allRecommendationsCount }}</strong>
+          <span>ressource(s) au total</span>
+        </div>
+        <div class="smart-rec-stat">
+          <strong>{{ recommendationAnalysis?.summary?.averageScore || portfolioAverageScore || 75 }}%</strong>
+          <span>score moyen estimé</span>
+        </div>
+        <div class="smart-rec-stat">
+          <strong>{{ recommendationAnalysis?.weakAcquis?.length || 0 }}</strong>
+          <span>acquis faible(s) détecté(s)</span>
+        </div>
+        <div class="smart-rec-stat">
+          <strong>{{ internetRecommendations.length }}</strong>
+          <span>cours & quiz du Web</span>
+        </div>
+      </div>
+    </article>
+
+    <div class="rec-filter-tabs" style="display:flex;flex-wrap:wrap;gap:0.6rem;margin:1.4rem 0 0.8rem">
+      <button
+        type="button"
+        class="rec-filter-btn"
+        [class.rec-filter-btn--active]="selectedRecFilter === 'all'"
+        (click)="selectedRecFilter = 'all'"
+      >
+        <mat-icon>apps</mat-icon> Tous ({{ allRecommendationsCount }})
+      </button>
+      <button
+        type="button"
+        class="rec-filter-btn"
+        [class.rec-filter-btn--active]="selectedRecFilter === 'platform'"
+        (click)="selectedRecFilter = 'platform'"
+      >
+        <mat-icon>school</mat-icon> Cours & Quiz EduVia ({{ platformRecommendationsCount }})
+      </button>
+      <button
+        type="button"
+        class="rec-filter-btn"
+        [class.rec-filter-btn--active]="selectedRecFilter === 'internet'"
+        (click)="selectedRecFilter = 'internet'"
+      >
+        <mat-icon>public</mat-icon> Cours & Quiz du Web ({{ internetRecommendations.length }})
+      </button>
+      <button
+        type="button"
+        class="rec-filter-btn"
+        [class.rec-filter-btn--active]="selectedRecFilter === 'ai'"
+        (click)="selectedRecFilter = 'ai'"
+      >
+        <mat-icon>psychology</mat-icon> Quiz IA Générés (2)
+      </button>
+    </div>
+
+    <!-- Acquis faibles detectes -->
+    <div class="smart-rec-section-head" *ngIf="recommendationAnalysis?.weakAcquis?.length">
+      <h3>Acquis faibles détectés</h3>
+      <span>{{ recommendationAnalysis?.weakAcquis?.length }} notion(s)</span>
+    </div>
+
+    <div class="weak-acquis-grid" *ngIf="recommendationAnalysis?.weakAcquis?.length">
+      <article class="weak-acquis-card" *ngFor="let weak of recommendationAnalysis?.weakAcquis">
+        <div class="weak-acquis-card__top">
+          <span class="weak-priority">{{ weak.severityLabel }}</span>
+          <strong>{{ weak.severity }}%</strong>
+        </div>
+        <h4>{{ weak.label }}</h4>
+        <p>{{ weak.reason }}</p>
+        <div class="weak-acquis-card__meta">
+          <span *ngIf="weak.courseId"><mat-icon>menu_book</mat-icon>{{ weak.courseId }}</span>
+          <span *ngIf="weak.chapterId"><mat-icon>folder</mat-icon>{{ weak.chapterId }}</span>
+          <span><mat-icon>help</mat-icon>{{ weak.incorrectQuestions }}/{{ weak.totalQuestions }}</span>
+        </div>
+        <div class="weak-progress"><span [style.width.%]="weak.severity"></span></div>
+        <div class="weak-keywords">
+          <span *ngFor="let keyword of weak.keywords">{{ keyword }}</span>
+        </div>
+        <div style="margin-top: 0.8rem;">
+          <button type="button" class="action-button action-button--secondary" (click)="generateAiRecommendationQuiz(weak.label)">
+            <mat-icon>play_arrow</mat-icon> Lancer le quiz ciblé
+          </button>
         </div>
       </article>
+    </div>
 
-      <div class="smart-rec-section-head">
-        <h3>Acquis faibles detectes</h3>
-        <span>{{ analysis.weakAcquis.length }} notion(s)</span>
-      </div>
+    <div class="smart-rec-section-head smart-rec-section-head--spaced">
+      <h3>Contenus & Quiz recommandés</h3>
+      <span>{{ displayedRecommendations.length }} ressource(s)</span>
+    </div>
 
-      <div class="weak-acquis-grid" *ngIf="analysis.weakAcquis.length > 0; else recommendationEmpty">
-        <article class="weak-acquis-card" *ngFor="let weak of analysis.weakAcquis">
-          <div class="weak-acquis-card__top">
-            <span class="weak-priority">{{ weak.severityLabel }}</span>
-            <strong>{{ weak.severity }}%</strong>
+    <div class="targeted-rec-list">
+      <article *ngFor="let item of displayedRecommendations" class="recommendation-card targeted-rec-card">
+        <div class="recommendation-card__leading">
+          <div class="recommendation-card__icon">
+            <mat-icon>{{ item.icon }}</mat-icon>
           </div>
-          <h4>{{ weak.label }}</h4>
-          <p>{{ weak.reason }}</p>
-          <div class="weak-acquis-card__meta">
-            <span *ngIf="weak.courseId"><mat-icon>menu_book</mat-icon>{{ weak.courseId }}</span>
-            <span *ngIf="weak.chapterId"><mat-icon>folder</mat-icon>{{ weak.chapterId }}</span>
-            <span><mat-icon>help</mat-icon>{{ weak.incorrectQuestions }}/{{ weak.totalQuestions }}</span>
-          </div>
-          <div class="weak-progress"><span [style.width.%]="weak.severity"></span></div>
-          <div class="weak-keywords">
-            <span *ngFor="let keyword of weak.keywords">{{ keyword }}</span>
-          </div>
-        </article>
-      </div>
+        </div>
 
-      <div class="smart-rec-section-head smart-rec-section-head--spaced">
-        <h3>Contenus recommandes</h3>
-        <span>{{ recommendations.length }} ressource(s)</span>
-      </div>
-
-      <div class="targeted-rec-list">
-        <article *ngFor="let item of recommendations" class="recommendation-card targeted-rec-card">
-          <div class="recommendation-card__leading">
-            <div class="recommendation-card__icon">
-              <mat-icon>{{ item.icon }}</mat-icon>
-            </div>
+        <div class="recommendation-card__body">
+          <h3>{{ item.title }}</h3>
+          <div class="recommendation-meta">
+            <span class="badge" [class]="'badge--' + recommendationTypeClass(item.type)">{{ item.type }}</span>
+            <span class="badge badge--external" *ngIf="item.isExternal">
+              <mat-icon style="font-size:13px;width:13px;height:13px">open_in_new</mat-icon>
+              {{ item.externalProvider || 'Web' }}
+            </span>
+            <span class="badge badge--ai" *ngIf="item.isAiGenerated">
+              <mat-icon style="font-size:13px;width:13px;height:13px">auto_awesome</mat-icon>
+              Généré par IA
+            </span>
+            <span class="badge badge--eduvia" *ngIf="!item.isExternal && !item.isAiGenerated">
+              Plateforme EduVia
+            </span>
+            <span class="badge badge--level">{{ item.level }}</span>
+            <span class="meta-time" *ngIf="item.duration">
+              <mat-icon>timer</mat-icon>{{ item.duration }}
+            </span>
+            <span class="meta-time" *ngIf="item.type === 'Quiz' && item.quizAttempts">
+              <mat-icon>repeat</mat-icon>{{ item.quizAttempts }} tentative(s)
+            </span>
           </div>
-
-          <div class="recommendation-card__body">
-            <h3>{{ item.title }}</h3>
-            <div class="recommendation-meta">
-              <span class="badge" [class]="'badge--' + recommendationTypeClass(item.type)">{{ item.type }}</span>
-              <span class="badge badge--ai" *ngIf="item.recommendationScore">Quiz IA recommande</span>
-              <span class="badge badge--level">{{ item.level }}</span>
-              <span class="meta-time" *ngIf="item.type === 'Quiz'">
-                <mat-icon>repeat</mat-icon>{{ item.quizAttempts || 1 }} tentative(s)
-              </span>
-              <span class="meta-time" *ngIf="item.type === 'Quiz'">
-                <mat-icon>timer</mat-icon>{{ recommendationQuizDurationLabel(item) }}
-              </span>
-              <span class="meta-time" *ngIf="item.type === 'Quiz' && recommendationDueDateLabel(item) as dueDateLabel">
-                <mat-icon>event</mat-icon>{{ dueDateLabel }}
-              </span>
-            </div>
-            <div class="weak-keywords targeted-rec-keywords" *ngIf="item.focusKeywords?.length">
-              <span *ngFor="let keyword of item.focusKeywords">{{ keyword }}</span>
-            </div>
-            <p class="recommendation-reason">
-              <mat-icon>topic</mat-icon>
-              {{ item.reason }}
-            </p>
+          <div class="weak-keywords targeted-rec-keywords" *ngIf="item.focusKeywords?.length">
+            <span *ngFor="let keyword of item.focusKeywords">{{ keyword }}</span>
           </div>
+          <p class="recommendation-reason">
+            <mat-icon>topic</mat-icon>
+            {{ item.reason }}
+          </p>
+        </div>
 
-          <div class="recommendation-card__actions">
-            <button
-              type="button"
-              class="action-button"
-              [disabled]="recommendationActionDisabled(item)"
-              (click)="startRecommendation(item)"
-            >
-              {{ recommendationActionLabel(item) }}
-            </button>
-          </div>
-        </article>
-      </div>
-    </ng-container>
-
-    <ng-template #recommendationEmpty>
-      <div class="embedded-section embedded-section--empty">
-        <h2>Aucune analyse disponible</h2>
-        <p>Terminez au moins un quiz pour generer des recommandations de cours et de quiz ciblees.</p>
-      </div>
-    </ng-template>
+        <div class="recommendation-card__actions">
+          <button
+            type="button"
+            class="action-button"
+            [class.action-button--external]="item.isExternal"
+            [disabled]="recommendationActionDisabled(item)"
+            (click)="startRecommendation(item)"
+          >
+            <mat-icon *ngIf="item.isExternal" style="font-size:16px;width:16px;height:16px;margin-right:4px">open_in_new</mat-icon>
+            <mat-icon *ngIf="item.isAiGenerated" style="font-size:16px;width:16px;height:16px;margin-right:4px">auto_awesome</mat-icon>
+            {{ recommendationActionLabel(item) }}
+          </button>
+        </div>
+      </article>
+    </div>
   </section>
 
   <section *ngIf="activeTab === 'portfolio'" class="portfolio-shell">
@@ -690,9 +738,12 @@
           <mat-icon>show_chart</mat-icon>
         </div>
         <div class="portfolio-score-line" *ngFor="let entry of portfolioQuizHistory">
-          <span>{{ entry.title }}</span>
+          <div>
+            <span>{{ entry.title }}</span>
+            <small *ngIf="entry.subtitle" style="display:block;font-size:0.75rem;color:#64748b;margin-top:0.2rem">{{ entry.subtitle }}</small>
+          </div>
           <div><i [style.width.%]="entry.score"></i></div>
-          <strong>{{ entry.score }}%</strong>
+          <strong [style.color]="entry.score >= 70 ? '#10b981' : entry.score >= 50 ? '#f59e0b' : '#ef4444'">{{ entry.score }}%</strong>
         </div>
       </section>
     </div>
