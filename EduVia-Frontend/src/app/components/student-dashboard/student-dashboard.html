@@ -493,7 +493,7 @@
           <span><mat-icon>auto_awesome</mat-icon>Recommandations adaptatives actives</span>
         </div>
         <div class="smart-rec-hero__actions" style="margin-top: 0.5rem;">
-          <button type="button" class="rec-ai-generate-btn" (click)="generateAiRecommendationQuiz()">
+          <button type="button" class="rec-ai-generate-btn" (click)="openAiQuizModal()">
             <mat-icon>auto_awesome</mat-icon>
             Générer un Quiz IA ciblé
           </button>
@@ -1870,4 +1870,112 @@
       </div>
     </section>
   </div>
+
+  <!-- Modal Génération de Quiz IA Ciblé -->
+  <div class="planner-modal-backdrop" *ngIf="aiQuizModalOpen" (click)="closeAiQuizModal()">
+    <section class="planner-modal ai-quiz-config-modal" (click)="$event.stopPropagation()" style="max-width: 580px; width: 92%; padding: 1.5rem; border-radius: 1.25rem;">
+      <button type="button" class="planner-modal-close" (click)="closeAiQuizModal()" aria-label="Fermer">
+        <mat-icon>close</mat-icon>
+      </button>
+
+      <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+        <span style="display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, #ef2f56, #8b2be2); color: #fff;">
+          <mat-icon>auto_awesome</mat-icon>
+        </span>
+        <div>
+          <h2 style="margin: 0; font-size: 1.25rem; font-weight: 800; color: #0f172a;">Générateur de Quiz IA Personnalisé</h2>
+          <p style="margin: 0; font-size: 0.85rem; color: #64748b;">Choisissez un sujet précis pour générer des questions spécifiques adaptées.</p>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 1.1rem; margin-top: 1.2rem;">
+        <!-- Points faibles recommandés -->
+        <div *ngIf="portfolioWeaknesses.length">
+          <label style="display: block; font-size: 0.85rem; font-weight: 700; color: #334155; margin-bottom: 0.4rem;">
+            Vos points à consolider recommandés :
+          </label>
+          <div style="display: flex; flex-wrap: wrap; gap: 0.45rem;">
+            <button
+              *ngFor="let weak of portfolioWeaknesses"
+              type="button"
+              (click)="selectAiQuizSubject(weak)"
+              [style.background]="aiQuizSelectedSubject === weak && !aiQuizCustomSubject ? 'linear-gradient(135deg, #ef2f56, #8b2be2)' : '#f1f5f9'"
+              [style.color]="aiQuizSelectedSubject === weak && !aiQuizCustomSubject ? '#ffffff' : '#1e293b'"
+              [style.font-weight]="aiQuizSelectedSubject === weak && !aiQuizCustomSubject ? '700' : '500'"
+              style="border: none; border-radius: 999px; padding: 0.4rem 0.85rem; font-size: 0.85rem; cursor: pointer; transition: all 0.2s ease;">
+              <mat-icon style="font-size: 14px; width: 14px; height: 14px; vertical-align: middle; margin-right: 4px;">flag</mat-icon>
+              {{ weak }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Sujets populaires -->
+        <div>
+          <label style="display: block; font-size: 0.85rem; font-weight: 700; color: #334155; margin-bottom: 0.4rem;">
+            Matières & Domaines de compétences :
+          </label>
+          <div style="display: flex; flex-wrap: wrap; gap: 0.45rem;">
+            <button
+              *ngFor="let subject of popularAiQuizSubjects"
+              type="button"
+              (click)="selectAiQuizSubject(subject)"
+              [style.background]="aiQuizSelectedSubject === subject && !aiQuizCustomSubject ? 'linear-gradient(135deg, #ef2f56, #8b2be2)' : '#f8fafc'"
+              [style.color]="aiQuizSelectedSubject === subject && !aiQuizCustomSubject ? '#ffffff' : '#334155'"
+              [style.border]="aiQuizSelectedSubject === subject && !aiQuizCustomSubject ? '1px solid transparent' : '1px solid #e2e8f0'"
+              [style.font-weight]="aiQuizSelectedSubject === subject && !aiQuizCustomSubject ? '700' : '500'"
+              style="border-radius: 999px; padding: 0.35rem 0.8rem; font-size: 0.82rem; cursor: pointer; transition: all 0.2s ease;">
+              {{ subject }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Saisie personnalisée -->
+        <div>
+          <label style="display: block; font-size: 0.85rem; font-weight: 700; color: #334155; margin-bottom: 0.4rem;">
+            Ou tapez votre propre sujet / chapitre sur mesure :
+          </label>
+          <input
+            type="text"
+            [(ngModel)]="aiQuizCustomSubject"
+            placeholder="Ex: Arbres binaires, Routage OSPF, Algèbre linéaire, Requêtes SQL..."
+            style="width: 100%; box-sizing: border-box; padding: 0.65rem 0.9rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.92rem; outline: none;"
+          />
+        </div>
+
+        <!-- Options: Difficulté et Nombre de questions -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div>
+            <label style="display: block; font-size: 0.82rem; font-weight: 700; color: #334155; margin-bottom: 0.35rem;">Difficulté :</label>
+            <select [(ngModel)]="aiQuizDifficulty" style="width: 100%; box-sizing: border-box; padding: 0.55rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.88rem; background: #fff;">
+              <option value="debutant">Débutant (Fondamentaux)</option>
+              <option value="intermediaire">Intermédiaire (Pratique)</option>
+              <option value="avance">Avancé (Expertise)</option>
+            </select>
+          </div>
+          <div>
+            <label style="display: block; font-size: 0.82rem; font-weight: 700; color: #334155; margin-bottom: 0.35rem;">Nombre de questions :</label>
+            <select [(ngModel)]="aiQuizQuestionCount" style="width: 100%; box-sizing: border-box; padding: 0.55rem; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.88rem; background: #fff;">
+              <option [ngValue]="5">5 questions (Rapide - 10 min)</option>
+              <option [ngValue]="10">10 questions (Complet - 20 min)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="planner-modal-actions" style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <button type="button" class="planner-secondary-button" (click)="closeAiQuizModal()" [disabled]="aiQuizGenerating">Annuler</button>
+        <button
+          type="button"
+          class="planner-primary-button"
+          (click)="confirmGenerateAiQuiz()"
+          [disabled]="aiQuizGenerating || (!aiQuizCustomSubject.trim() && !aiQuizSelectedSubject)"
+          style="display: inline-flex; align-items: center; gap: 0.45rem; background: linear-gradient(135deg, #ef2f56, #8b2be2); color: #fff; border: none; padding: 0.65rem 1.3rem; border-radius: 999px; font-weight: 700; cursor: pointer;">
+          <mat-icon *ngIf="!aiQuizGenerating" style="font-size: 18px; width: 18px; height: 18px;">auto_awesome</mat-icon>
+          <mat-icon *ngIf="aiQuizGenerating" style="font-size: 18px; width: 18px; height: 18px; animation: spin 1s linear infinite;">refresh</mat-icon>
+          {{ aiQuizGenerating ? "Génération par l'IA en cours..." : 'Générer le Quiz' }}
+        </button>
+      </div>
+    </section>
+  </div>
+
 </div>

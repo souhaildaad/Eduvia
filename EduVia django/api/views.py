@@ -1676,113 +1676,456 @@ def _extract_uploaded_file_text(upload):
 
 
 _CURATED_QUIZ_BANK = [
+    # ==========================================
+    # 1. SYSTÈMES ET RÉSEAUX / TÉLÉCOMS
+    # ==========================================
     {
-        'topics': {'etape', 'probleme', 'algorithme', 'analyse', 'specification', 'chapitre 1', '1.1', 'idee', 'programme', 'c'},
-        'prompt': "Quelle est la deuxième étape de la démarche de résolution d'un problème en programmation (après la position du problème) ?",
+        'topics': {'reseau', 'reseaux', 'osi', 'couche', 'modele', 'transport', 'liaison', 'physique', 'application', 'systeme'},
+        'prompt': "Dans le modèle OSI à 7 couches, quelle couche est responsable du routage des paquets et de l'adressage logique ?",
         'options': [
-            {'label': 'A', 'text': "Spécification et analyse du problème (identifier entrées, sorties, contraintes et formules)"},
-            {'label': 'B', 'text': "Édition des liens avec les bibliothèques standard"},
-            {'label': 'C', 'text': "Exécution directe du fichier binaire sur le processeur"},
-            {'label': 'D', 'text': "Suppression des commentaires dans le code source"},
+            {'label': 'A', 'text': "La couche Réseau (Couche 3)"},
+            {'label': 'B', 'text': "La couche Liaison de données (Couche 2)"},
+            {'label': 'C', 'text': "La couche Transport (Couche 4)"},
+            {'label': 'D', 'text': "La couche Physique (Couche 1)"},
         ],
         'correctAnswers': ['A'],
-        'explanation': "La 2e étape consiste à bien comprendre l'énoncé, identifier les données d'entrée, les résultats attendus, les contraintes et les formules de calcul avant d'écrire l'algorithme.",
+        'explanation': "La couche Réseau (couche 3 du modèle OSI) gère l'adressage logique (IP) et détermine le meilleur chemin pour acheminer les paquets via les routeurs.",
     },
     {
-        'topics': {'executable', 'compilation', 'compilateur', 'edition', 'liens', 'objet', 'source', 'chapitre 1', '1.1', 'c'},
-        'prompt': "Quel est l'ordre exact des étapes permettant de transformer un fichier source en langage C (*.c) en un programme exécutable ?",
+        'topics': {'reseau', 'reseaux', 'ip', 'ipv4', 'masque', 'sous-reseau', 'hote', 'cidr', 'adresse'},
+        'prompt': "Dans un réseau local configuré avec le masque de sous-réseau 255.255.255.0 (/24), combien d'adresses d'hôtes utilisables sont disponibles ?",
         'options': [
-            {'label': 'A', 'text': "Fichier source (*.c) ➔ Compilation en fichier objet (*.o) ➔ Édition des liens (avec les bibliothèques) ➔ Exécutable"},
-            {'label': 'B', 'text': "Fichier objet (*.o) ➔ Fichier source (*.c) ➔ Interprétation HTML"},
-            {'label': 'C', 'text': "Édition des liens ➔ Écriture de l'algorithme ➔ Fichier source (*.c)"},
-            {'label': 'D', 'text': "Exécution ➔ Compilation ➔ Spécification du problème"},
+            {'label': 'A', 'text': "254 hôtes (256 - adresse réseau et adresse broadcast)"},
+            {'label': 'B', 'text': "256 hôtes utilisables"},
+            {'label': 'C', 'text': "128 hôtes utilisables"},
+            {'label': 'D', 'text': "512 hôtes utilisables"},
         ],
         'correctAnswers': ['A'],
-        'explanation': "Le compilateur traduit d'abord les fichiers source (*.c) en fichiers objets (*.o), puis l'éditeur de liens les assemble avec les bibliothèques (libs) pour créer l'exécutable.",
+        'explanation': "Un masque /24 laisse 8 bits pour les hôtes (2^8 = 256 adresses). L'adresse de réseau (.0) et l'adresse de diffusion broadcast (.255) étant réservées, il reste 254 adresses attribuables.",
     },
     {
-        'topics': {'structure', 'main', 'stdio', 'printf', 'scanf', 'chapitre 1', '1.2', 'c', 'programme'},
-        'prompt': "Dans un programme en langage C, quel est le rôle de la directive #include <stdio.h> et de la fonction main() ?",
+        'topics': {'reseau', 'reseaux', 'tcp', 'udp', 'protocole', 'transport', 'fiabilite', 'connexion'},
+        'prompt': "Quelle est la différence fondamentale entre les protocoles de transport TCP et UDP ?",
         'options': [
-            {'label': 'A', 'text': "#include <stdio.h> importe la bibliothèque d'entrées/sorties (printf, scanf) et main() est le point d'entrée obligatoire du programme"},
-            {'label': 'B', 'text': "#include <stdio.h> déclare une boucle infinie et main() affiche automatiquement du texte"},
-            {'label': 'C', 'text': "main() est facultative en langage C si on utilise printf()"},
-            {'label': 'D', 'text': "#include <stdio.h> sert uniquement à écrire des commentaires sur plusieurs lignes"},
+            {'label': 'A', 'text': "TCP est orienté connexion avec garantie de livraison et acquittement (ACK), tandis qu'UDP est sans connexion et priorise la rapidité"},
+            {'label': 'B', 'text': "UDP garantit la livraison ordonnée des paquets sans aucune perte"},
+            {'label': 'C', 'text': "TCP ne fonctionne que sur les réseaux locaux (LAN)"},
+            {'label': 'D', 'text': "UDP chiffre automatiquement toutes les communications"},
         ],
         'correctAnswers': ['A'],
-        'explanation': "Tout programme C commence son exécution par la fonction principale main(), et <stdio.h> fournit les fonctions standard d'affichage (printf) et de lecture (scanf).",
+        'explanation': "TCP établit une connexion (handshake à 3 voies) et réémet les segments perdus. UDP envoie les datagrammes sans vérification préalable, idéal pour le streaming audio/vidéo et le jeu en direct.",
     },
     {
-        'topics': {'commentaire', 'casse', 'minuscule', 'majuscule', 'mot', 'reserve', 'chapitre 1', '1.2', 'c'},
-        'prompt': "Laquelle de ces affirmations concernant la syntaxe du langage C est vraie ?",
+        'topics': {'reseau', 'reseaux', 'dns', 'nom', 'domaine', 'ip', 'resolution', 'port'},
+        'prompt': "Quel est le rôle du service DNS (Domain Name System) et sur quel port par défaut fonctionne-t-il ?",
         'options': [
-            {'label': 'A', 'text': "Le langage C distingue les majuscules des minuscules et tous les mots réservés (if, else, for, while, return) s'écrivent en minuscules"},
-            {'label': 'B', 'text': "Les mots réservés IF, FOR et WHILE doivent obligatoirement être écrits en majuscules"},
-            {'label': 'C', 'text': "Les commentaires entre /* et */ sont exécutés par le processeur"},
-            {'label': 'D', 'text': "Les accolades { et } sont interdites dans la fonction main()"},
+            {'label': 'A', 'text': "Traduire un nom de domaine lisible (ex: eduvia.tn) en adresse IP numérique, généralement sur le port UDP 53"},
+            {'label': 'B', 'text': "Attribuer dynamiquement des adresses IP aux machines clientes sur le port 80"},
+            {'label': 'C', 'text': "Chiffrer les e-mails sortants sur le port 25"},
+            {'label': 'D', 'text': "Bloquer les virus informatiques sur le réseau local"},
         ],
         'correctAnswers': ['A'],
-        'explanation': "Le langage C est sensible à la casse : tous ses mots réservés s'écrivent en minuscules, et les commentaires (/* ... */ ou //) sont ignorés à la compilation.",
+        'explanation': "Le DNS agit comme l'annuaire d'Internet en résolvant les noms de domaine en adresses IP, principalement via des requêtes UDP sur le port 53.",
     },
     {
-        'topics': {'condition', 'if', 'else', 'conditionnelle', 'chapitre 2', '2.1', '2.3', 'c', 'vrai', 'faux'},
-        'prompt': "En langage C, comment une expression conditionnelle dans une instruction if (Condition) est-elle évaluée ?",
+        'topics': {'reseau', 'reseaux', 'dhcp', 'configuration', 'ip', 'dynamique', 'bail', 'passerelle'},
+        'prompt': "Quelle est la fonction principale d'un serveur DHCP sur un réseau informatique ?",
         'options': [
-            {'label': 'A', 'text': "La valeur 0 correspond à Faux, et toute valeur différente de 0 correspond à Vrai"},
-            {'label': 'B', 'text': "La valeur 0 correspond à Vrai, et toute valeur positive correspond à Faux"},
-            {'label': 'C', 'text': "Les parenthèses autour de la condition sont interdites après le mot-clé if"},
-            {'label': 'D', 'text': "Le bloc else est exécuté même lorsque la condition du if est vraie"},
+            {'label': 'A', 'text': "Fournir automatiquement une configuration IP (adresse IP, masque, passerelle, DNS) aux périphériques clients connectés"},
+            {'label': 'B', 'text': "Sauvegarder les fichiers personnels des utilisateurs sur le cloud"},
+            {'label': 'C', 'text': "Générer les clés de chiffrement Wi-Fi WPA3"},
+            {'label': 'D', 'text': "Remplacer le commutateur (switch) physique"},
         ],
         'correctAnswers': ['A'],
-        'explanation': "En C, toute expression numérique valant 0 est évaluée comme fausse, tandis que toute valeur non nulle (!= 0) est évaluée comme vraie.",
+        'explanation': "Le protocole DHCP (Dynamic Host Configuration Protocol) évite la configuration manuelle en allouant dynamiquement un bail IP et les paramètres réseau nécessaires aux hôtes.",
     },
     {
-        'topics': {'operateur', 'logique', 'condition', 'if', 'else', 'imbrique', 'switch', 'chapitre 2', '2.1', '2.3', 'c'},
-        'prompt': "Quels sont les opérateurs logiques ET / OU en langage C, et quelle structure est la plus lisible pour gérer un menu à choix fixes ?",
+        'topics': {'reseau', 'reseaux', 'switch', 'commutateur', 'routeur', 'mac', 'table', 'routage'},
+        'prompt': "Quelle est la distinction clé entre un commutateur (switch) et un routeur ?",
         'options': [
-            {'label': 'A', 'text': "&& pour le ET logique, || pour le OU logique, et la structure switch pour les menus à choix fixes"},
-            {'label': 'B', 'text': "AND pour le ET logique, OR pour le OU logique, et la boucle for pour les menus"},
-            {'label': 'C', 'text': "= pour la comparaison d'égalité et == pour l'affectation d'une valeur"},
-            {'label': 'D', 'text': "& pour le OU logique et | pour le ET logique"},
+            {'label': 'A', 'text': "Le switch commute les trames au niveau liaison (Couche 2) à l'aide des adresses MAC, alors que le routeur achemine les paquets au niveau réseau (Couche 3) avec les adresses IP"},
+            {'label': 'B', 'text': "Le switch interconnecte différents réseaux distants, alors que le routeur gère les câbles RJ45"},
+            {'label': 'C', 'text': "Le routeur ne dispose pas de table de routage"},
+            {'label': 'D', 'text': "Un switch ne peut connecter que deux ordinateurs maximum"},
         ],
         'correctAnswers': ['A'],
-        'explanation': "En C, && représente le ET logique, || le OU logique, == la comparaison d'égalité, et switch offre la meilleure lisibilité pour des choix multiples fixes.",
+        'explanation': "Le switch filtre et achemine les trames ethernet au sein d'un même réseau local (LAN) grâce à sa table CAM/MAC. Le routeur interconnecte des réseaux distincts (LAN vers WAN).",
     },
     {
-        'topics': {'boucle', 'for', 'iterative', 'iteration', 'compteur', 'chapitre 3', '3.1', 'c'},
-        'prompt': "Quand utilise-t-on la boucle « for (Init; Condition; Pas) » en langage C et quelle règle faut-il respecter ?",
+        'topics': {'reseau', 'reseaux', 'mac', 'ethernet', 'physique', 'carte', 'octets', 'bits'},
+        'prompt': "Sur combien de bits est codée une adresse MAC (Media Access Control) et quel est son format habituel ?",
         'options': [
-            {'label': 'A', 'text': "Lorsque le nombre d'itérations est connu à l'avance, en évitant de modifier la variable limite dans le corps de la boucle"},
-            {'label': 'B', 'text': "Uniquement lorsque le nombre de répétitions est inconnu et dépend d'une saisie clavier aléatoire"},
-            {'label': 'C', 'text': "En modifiant systématiquement la borne limite à chaque tour dans le corps de la boucle"},
-            {'label': 'D', 'text': "Pour déclarer une bibliothèque standard au début du fichier"},
+            {'label': 'A', 'text': "48 bits (6 octets), généralement représentés par 6 paires de chiffres hexadécimaux séparés par des deux-points ou tirets"},
+            {'label': 'B', 'text': "32 bits divisés en 4 nombres décimaux"},
+            {'label': 'C', 'text': "128 bits au format binaire"},
+            {'label': 'D', 'text': "64 bits au format base64"},
         ],
         'correctAnswers': ['A'],
-        'explanation': "La boucle for utilise un compteur d'itération quand le nombre de répétitions est connu à l'avance. Modifier la borne limite dans le corps de la boucle provoque des erreurs logiques.",
+        'explanation': "L'adresse MAC est un identifiant unique gravé sur la carte réseau physique, composé de 48 bits (ex: 00:1A:2B:3C:4D:5E). Les 3 premiers octets identifient le fabricant (OUI).",
     },
     {
-        'topics': {'pitch', 'impact', 'poster', 'cdio', 'ccca4', 'cta', 'headline', 'idea'},
-        'prompt': "Dans le guide IDEA PITCH (PI-CDIO), que signifient les lettres du modèle IMPACT pour structurer une présentation persuasive ?",
+        'topics': {'reseau', 'reseaux', 'nat', 'securite', 'ip', 'privee', 'publique', 'port'},
+        'prompt': "À quoi sert le mécanisme NAT (Network Address Translation) sur une passerelle ou box Internet ?",
         'options': [
-            {'label': 'A', 'text': "Ignite curiosity, Make the problem real, Present the shift, Amplify the value, Chart the future, Trigger action"},
-            {'label': 'B', 'text': "Initialize code, Manage memory, Print output, Allocate pointers, Compile files, Test binary"},
-            {'label': 'C', 'text': "Introduce team, Mention budget, Provide code, Ask questions, Close slides, Thank jury"},
-            {'label': 'D', 'text': "Identify bugs, Measure speed, Patch kernel, Archive logs, Check network, Terminate process"},
+            {'label': 'A', 'text': "Permettre à plusieurs équipements d'un réseau privé de partager une seule adresse IP publique pour accéder à Internet"},
+            {'label': 'B', 'text': "Accélérer la vitesse physique de la fibre optique"},
+            {'label': 'C', 'text': "Supprimer automatiquement les paquets corrompus"},
+            {'label': 'D', 'text': "Convertir les signaux analogiques en signaux optiques"},
         ],
         'correctAnswers': ['A'],
-        'explanation': "Le modèle IMPACT guide le storytelling persuasif du pitch : capter l'attention (Ignite), ancrer le problème (Make real), présenter la solution et sa valeur (Present & Amplify), projeter l'avenir (Chart) et appeler à l'action (Trigger action).",
+        'explanation': "Le NAT (souvent combiné au PAT / surcharge de ports) traduit les adresses IP privées (ex: 192.168.x.x) en une IP publique routable sur Internet, préservant ainsi les adresses IPv4.",
+    },
+
+    # ==========================================
+    # 2. MATHÉMATIQUES & ALGÈBRE
+    # ==========================================
+    {
+        'topics': {'math', 'mathematique', 'mathematiques', 'algebre', 'matrice', 'matrices', 'produit', 'dimension'},
+        'prompt': "À quelle condition peut-on effectuer le produit matriciel de deux matrices A (de dimension m x n) et B (de dimension p x q) ?",
+        'options': [
+            {'label': 'A', 'text': "Le nombre de colonnes de la première matrice A doit être égal au nombre de lignes de la deuxième matrice B (n = p)"},
+            {'label': 'B', 'text': "Les deux matrices doivent impérativement être carrées de même dimension"},
+            {'label': 'C', 'text': "Le produit est toujours possible sans aucune condition sur les dimensions"},
+            {'label': 'D', 'text': "m doit être égal à q et n doit être égal à p"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Pour multiplier A par B, chaque ligne de A est combinée avec chaque colonne de B : il faut donc que n = p. La matrice résultante C aura alors pour dimension (m x q).",
     },
     {
-        'topics': {'pitch', 'poster', 'cdio', 'ccca4', 'cta', 'headline', 'benefits'},
-        'prompt': "Quels sont les 7 éléments indispensables d'un poster IDEA PITCH réussi selon le guide CCCA4 ?",
+        'topics': {'math', 'mathematique', 'mathematiques', 'determinant', 'matrice', 'inverse', 'inversible'},
+        'prompt': "Quelle est la condition nécessaire et suffisante pour qu'une matrice carrée M soit inversible ?",
         'options': [
-            {'label': 'A', 'text': "Headline, The Problem, The Solution, Three Key Benefits, Uniqueness, Evidence, Call to Action (CTA + QR Code)"},
-            {'label': 'B', 'text': "Code source complet, Schéma UML, Base de données SQL, Bibliographie, CV, Annexe financière, Licence"},
-            {'label': 'C', 'text': "Uniquement un titre et un long texte technique de 1000 mots sans visuel"},
-            {'label': 'D', 'text': "Table des matières, Introduction théorique, 15 fonctionnalités techniques, Conclusion"},
+            {'label': 'A', 'text': "Son déterminant doit être non nul (det(M) ≠ 0)"},
+            {'label': 'B', 'text': "Tous les coefficients de la diagonale principale doivent être égaux à 1"},
+            {'label': 'C', 'text': "Son déterminant doit être strictement supérieur à 10"},
+            {'label': 'D', 'text': "Elle doit obligatoirement avoir une taille supérieure à 3x3"},
         ],
         'correctAnswers': ['A'],
-        'explanation': "Le poster commercial doit être compris en quelques secondes grâce à ces 7 blocs orientés valeur utilisateur et preuves chiffrées.",
+        'explanation': "Une matrice carrée M est inversible (non singulière) si et seulement si son déterminant est différent de zéro (det(M) ≠ 0).",
+    },
+    {
+        'topics': {'math', 'mathematique', 'mathematiques', 'analyse', 'derivee', 'fonction', 'calcul'},
+        'prompt': "Quelle est la dérivée de la fonction f(x) = ln(x) pour tout x > 0 ?",
+        'options': [
+            {'label': 'A', 'text': "f'(x) = 1 / x"},
+            {'label': 'B', 'text': "f'(x) = e^x"},
+            {'label': 'C', 'text': "f'(x) = x"},
+            {'label': 'D', 'text': "f'(x) = 1 / x²"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "La dérivée de la fonction logarithme népérien ln(x) sur son domaine de définition ]0, +∞[ est égale à 1/x.",
+    },
+    {
+        'topics': {'math', 'mathematique', 'mathematiques', 'integrale', 'integration', 'parties', 'primitive'},
+        'prompt': "Quelle est la formule de l'intégration par parties pour deux fonctions dérivables u et v ?",
+        'options': [
+            {'label': 'A', 'text': "∫ u(x) v'(x) dx = u(x) v(x) - ∫ u'(x) v(x) dx"},
+            {'label': 'B', 'text': "∫ u(x) v'(x) dx = u'(x) v'(x) + ∫ u(x) v(x) dx"},
+            {'label': 'C', 'text': "∫ u(x) v(x) dx = u(x) / v(x)"},
+            {'label': 'D', 'text': "∫ u(x) v'(x) dx = [u(x) + v(x)]²"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "L'intégration par parties découle de la dérivée d'un produit (uv)' = u'v + uv', ce qui donne ∫ u v' = uv - ∫ u' v.",
+    },
+    {
+        'topics': {'math', 'mathematique', 'mathematiques', 'logique', 'boole', 'morgan', 'et', 'ou'},
+        'prompt': "Selon les lois de De Morgan en logique booléenne, à quoi équivaut la négation de (A ET B), notée NON(A ∧ B) ?",
+        'options': [
+            {'label': 'A', 'text': "(NON A) OU (NON B)"},
+            {'label': 'B', 'text': "(NON A) ET (NON B)"},
+            {'label': 'C', 'text': "A OU B"},
+            {'label': 'D', 'text': "NON(A OU B)"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "La première loi de De Morgan énonce que la négation d'une conjonction est la disjonction des négations : ¬(A ∧ B) = (¬A) ∨ (¬B).",
+    },
+    {
+        'topics': {'math', 'mathematique', 'mathematiques', 'probabilite', 'probabilites', 'independant', 'evenement'},
+        'prompt': "Si deux événements A et B sont dits indépendants dans un espace probabilisé, quelle formule vérifient-ils ?",
+        'options': [
+            {'label': 'A', 'text': "P(A ∩ B) = P(A) × P(B)"},
+            {'label': 'B', 'text': "P(A ∪ B) = P(A) + P(B)"},
+            {'label': 'C', 'text': "P(A ∩ B) = 0"},
+            {'label': 'D', 'text': "P(A) = 1 - P(B)"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Par définition mathématique, deux événements A et B sont indépendants si et seulement si la probabilité de leur intersection est égale au produit de leurs probabilités individuelles.",
+    },
+
+    # ==========================================
+    # 3. INFOGRAPHIE & MULTIMÉDIA
+    # ==========================================
+    {
+        'topics': {'infographie', 'multimedia', 'vectoriel', 'matriciel', 'pixel', 'svg', 'image', 'resolution'},
+        'prompt': "Quel est l'avantage principal d'une image vectorielle (ex: SVG) par rapport à une image matricielle (ex: JPEG, PNG) ?",
+        'options': [
+            {'label': 'A', 'text': "Elle peut être redimensionnée à l'infini sans aucune perte de netteté ni effet de pixellisation car elle est définie par des formules géométriques"},
+            {'label': 'B', 'text': "Elle contient obligatoirement plus de pixels réels qu'une image bitmap"},
+            {'label': 'C', 'text': "Elle ne peut être affichée qu'en noir et blanc"},
+            {'label': 'D', 'text': "Elle a toujours une taille de fichier supérieure à 100 Mo"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Les images vectorielles reposent sur des vecteurs mathématiques (points, lignes, courbes de Bézier), ce qui permet des zooms et agrandissements infinis avec une netteté parfaite.",
+    },
+    {
+        'topics': {'infographie', 'multimedia', 'rvb', 'cmjn', 'couleur', 'ecran', 'impression', 'synthèse'},
+        'prompt': "Pour concevoir une affiche destinée à être imprimée en imprimerie professionnelle, quel mode colorimétrique doit-on privilégier ?",
+        'options': [
+            {'label': 'A', 'text': "CMJN (Cyan, Magenta, Jaune, Noir - synthèse soustractive)"},
+            {'label': 'B', 'text': "RVB (Rouge, Vert, Bleu - synthèse additive)"},
+            {'label': 'C', 'text': "Niveaux de gris uniquement"},
+            {'label': 'D', 'text': "Format Hexadécimal pur"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Le mode RVB est réservé aux écrans émetteurs de lumière (synthèse additive). Pour l'impression papier, on utilise le mode quadrichromique CMJN (synthèse soustractive de l'encre).",
+    },
+    {
+        'topics': {'infographie', 'multimedia', 'dpi', 'resolution', 'impression', 'pixel', 'pouce'},
+        'prompt': "Quelle est la résolution standard recommandée (en DPI / PPP) pour une impression graphique nette et professionnelle ?",
+        'options': [
+            {'label': 'A', 'text': "300 DPI"},
+            {'label': 'B', 'text': "72 DPI"},
+            {'label': 'C', 'text': "16 DPI"},
+            {'label': 'D', 'text': "1200 DPI obligatoire"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "300 DPI (points par pouce) est le standard professionnel de l'imprimerie pour un rendu net à l'œil nu. 72 à 96 DPI est suffisant pour le web et les écrans.",
+    },
+    {
+        'topics': {'infographie', 'multimedia', 'compression', 'lossy', 'lossless', 'jpeg', 'png'},
+        'prompt': "Quelle est la caractéristique du format d'image PNG par rapport au format JPEG ?",
+        'options': [
+            {'label': 'A', 'text': "PNG utilise une compression sans perte (lossless) et supporte la transparence (canal Alpha)"},
+            {'label': 'B', 'text': "PNG compresse toujours avec perte destructrice irréversible"},
+            {'label': 'C', 'text': "JPEG supporte parfaitement le canal de transparence alpha"},
+            {'label': 'D', 'text': "PNG ne peut afficher que 256 couleurs au maximum"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Le format PNG offre une compression sans perte d'information et prend en charge le canal Alpha (transparence progressive), idéal pour les logos, graphiques et icônes d'interface.",
+    },
+    {
+        'topics': {'infographie', 'multimedia', '3d', 'maillage', 'mesh', 'polygone', 'texture', 'uv'},
+        'prompt': "En modélisation 3D, de quoi est constitué un maillage polygonal (polygon mesh) standard ?",
+        'options': [
+            {'label': 'A', 'text': "De sommets (vertices), d'arêtes (edges) et de faces (polygones / triangles)"},
+            {'label': 'B', 'text': "Uniquement de calques Photoshop superposés"},
+            {'label': 'C', 'text': "De fichiers sonores MP3 synchronisés"},
+            {'label': 'D', 'text': "De polices de caractères typographiques"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Dans l'univers 3D, un maillage est une structure géométrique discrétisée formée de sommets (points dans l'espace 3D), reliés par des arêtes pour former des faces planes (triangles ou quads).",
+    },
+
+    # ==========================================
+    # 4. BASES DE DONNÉES & SQL
+    # ==========================================
+    {
+        'topics': {'sql', 'bdd', 'base', 'donnees', 'relationnel', 'cle', 'primaire', 'etrangere'},
+        'prompt': "Dans une base de données relationnelle, quelle est la distinction entre une clé primaire et une clé étrangère ?",
+        'options': [
+            {'label': 'A', 'text': "La clé primaire identifie de façon unique et non nulle chaque ligne d'une table, alors que la clé étrangère fait référence à la clé primaire d'une autre table pour lier les données"},
+            {'label': 'B', 'text': "Une clé étrangère doit obligatoirement être chiffrée avec un mot de passe"},
+            {'label': 'C', 'text': "Une table peut contenir plusieurs clés primaires physiques indépendantes"},
+            {'label': 'D', 'text': "La clé primaire peut accepter des valeurs nulles indéfinies"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "La clé primaire garantit l'identité unique de chaque enregistrement dans sa table. La clé étrangère garantit l'intégrité référentielle en établissant une liaison vers une clé primaire externe.",
+    },
+    {
+        'topics': {'sql', 'bdd', 'where', 'having', 'group', 'aggregation', 'select'},
+        'prompt': "En SQL, quelle est la différence essentielle entre la clause WHERE et la clause HAVING ?",
+        'options': [
+            {'label': 'A', 'text': "WHERE filtre les lignes individuelles avant l'agrégation, tandis que HAVING filtre les groupes après application de GROUP BY et des fonctions d'agrégation (COUNT, SUM, AVG)"},
+            {'label': 'B', 'text': "HAVING s'exécute toujours avant la lecture de la table"},
+            {'label': 'C', 'text': "WHERE permet d'utiliser directement les fonctions COUNT() et AVG() dans son prédicat"},
+            {'label': 'D', 'text': "HAVING remplace la commande SELECT"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "WHERE s'applique sur les tuples sources avant tout regroupement. HAVING intervient après le regroupement GROUP BY pour filtrer sur le résultat des fonctions agrégées.",
+    },
+    {
+        'topics': {'sql', 'bdd', 'join', 'jointure', 'left', 'inner', 'tables'},
+        'prompt': "Quel est le comportement d'une jointure LEFT JOIN (ou LEFT OUTER JOIN) en SQL ?",
+        'options': [
+            {'label': 'A', 'text': "Elle retourne toutes les lignes de la table de gauche, accompagnées des correspondances de la table de droite ou de NULL s'il n'y a pas de correspondance"},
+            {'label': 'B', 'text': "Elle ne conserve que les lignes qui ont une correspondance exacte dans les deux tables"},
+            {'label': 'C', 'text': "Elle supprime automatiquement les doublons de la table de droite"},
+            {'label': 'D', 'text': "Elle produit le produit cartésien complet sans aucune condition de jointure"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Le LEFT JOIN préserve l'intégralité des enregistrements de la table figurant à gauche du mot-clé, complétant les champs de la table droite par NULL si aucune correspondance n'est trouvée.",
+    },
+    {
+        'topics': {'sql', 'bdd', 'acid', 'transaction', 'atomicite', 'coherence', 'isolation', 'durabilite'},
+        'prompt': "Que garantit la propriété d'Atomicité dans les transactions ACID d'un SGBD relationnel ?",
+        'options': [
+            {'label': 'A', 'text': "Toutes les opérations de la transaction sont entièrement exécutées avec succès, ou aucune ne l'est en cas d'erreur (tout ou rien / commit ou rollback)"},
+            {'label': 'B', 'text': "Les données sont compressées au niveau atomique du disque"},
+            {'label': 'C', 'text': "Chaque requête ne peut manipuler qu'une seule colonne à la fois"},
+            {'label': 'D', 'text': "La base de données s'exécute sur un seul cœur de processeur"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "L'atomicité garantit que la transaction est indivisible : si une étape échoue (panne, contrainte violée), toutes les modifications précédentes sont annulées (rollback).",
+    },
+
+    # ==========================================
+    # 5. DÉVELOPPEMENT WEB (HTML, CSS, JS, HTTP)
+    # ==========================================
+    {
+        'topics': {'web', 'html', 'semantique', 'accessibilite', 'seo', 'balise'},
+        'prompt': "Pourquoi est-il fortement recommandé d'utiliser des balises HTML5 sémantiques (<header>, <nav>, <main>, <article>, <footer>) plutôt que de simples <div> ?",
+        'options': [
+            {'label': 'A', 'text': "Pour donner du sens à la structure du document, améliorer l'accessibilité pour les lecteurs d'écran et optimiser le référencement naturel (SEO)"},
+            {'label': 'B', 'text': "Parce que le navigateur refuse d'afficher une page sans ces balises"},
+            {'label': 'C', 'text': "Pour accélérer la vitesse de téléchargement des images"},
+            {'label': 'D', 'text': "Pour compiler automatiquement le code en JavaScript"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Les éléments sémantiques clarifient l'architecture du document pour les moteurs de recherche et les outils d'assistance aux personnes en situation de handicap.",
+    },
+    {
+        'topics': {'web', 'css', 'flexbox', 'grid', 'mise en page', 'alignement'},
+        'prompt': "En CSS moderne, quelle est la distinction majeure d'utilisation entre Flexbox et CSS Grid ?",
+        'options': [
+            {'label': 'A', 'text': "Flexbox est principalement unidimensionnel (gère une ligne OU une colonne), alors que CSS Grid est bidimensionnel (lignes ET colonnes simultanées)"},
+            {'label': 'B', 'text': "Flexbox ne fonctionne que sur les ordinateurs portables"},
+            {'label': 'C', 'text': "CSS Grid ne supporte pas l'alignement des éléments"},
+            {'label': 'D', 'text': "Flexbox est déprécié au profit exclusif des tables HTML"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Flexbox excelle pour organiser des composants linéaires ou répartir l'espace selon un axe. CSS Grid est le système idéal pour concevoir des mises en page complexes sur deux axes.",
+    },
+    {
+        'topics': {'web', 'http', 'api', 'rest', 'status', 'code', 'requete'},
+        'prompt': "Quel code de statut HTTP indique que la ressource demandée a été créée avec succès sur le serveur lors d'une requête POST ?",
+        'options': [
+            {'label': 'A', 'text': "201 Created"},
+            {'label': 'B', 'text': "200 OK"},
+            {'label': 'C', 'text': "400 Bad Request"},
+            {'label': 'D', 'text': "404 Not Found"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Le code 201 Created est la réponse HTTP standard signalant qu'une requête de création (généralement POST) a abouti et qu'une nouvelle ressource est instanciée.",
+    },
+    {
+        'topics': {'web', 'javascript', 'js', 'async', 'await', 'promise', 'asynchrone'},
+        'prompt': "En JavaScript moderne, quel est l'intérêt principal de la syntaxe async / await par rapport aux chaînes de promesses .then() ?",
+        'options': [
+            {'label': 'A', 'text': "Écrire du code asynchrone qui se lit et se structure de manière linéaire comme du code synchrone, facilitant la lisibilité et la gestion des erreurs avec try/catch"},
+            {'label': 'B', 'text': "Bloquer complètement l'interface utilisateur pendant le chargement"},
+            {'label': 'C', 'text': "Remplacer l'utilisation du mot-clé function"},
+            {'label': 'D', 'text': "Accélérer le débit de la connexion réseau"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "async/await est du sucre syntaxique au-dessus des Promises facilitant grandement la maintenance du code asynchrone sans imbrications complexes de callbacks.",
+    },
+
+    # ==========================================
+    # 6. SYSTÈMES D'EXPLOITATION & LINUX
+    # ==========================================
+    {
+        'topics': {'linux', 'os', 'systeme', 'exploitation', 'chmod', 'permission', 'droits'},
+        'prompt': "Sous Linux, que signifie la commande chmod 755 mon_script.sh ?",
+        'options': [
+            {'label': 'A', 'text': "Le propriétaire a tous les droits (rwx=7), le groupe et les autres ont les droits de lecture et d'exécution (r-x=5)"},
+            {'label': 'B', 'text': "Tous les utilisateurs ont les droits d'écriture complets"},
+            {'label': 'C', 'text': "Le fichier est verrouillé en lecture seule pour tout le monde"},
+            {'label': 'D', 'text': "Le script est supprimé après 755 secondes"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "7 = 4(r) + 2(w) + 1(x) pour l'utilisateur propriétaire ; 5 = 4(r) + 1(x) pour le groupe propriétaire et les autres utilisateurs.",
+    },
+    {
+        'topics': {'linux', 'os', 'systeme', 'exploitation', 'processus', 'thread', 'memoire'},
+        'prompt': "Quelle est la différence fondamentale entre un processus et un thread sous un système d'exploitation moderne ?",
+        'options': [
+            {'label': 'A', 'text': "Un processus possède son propre espace d'adressage mémoire isolé, alors que les threads d'un même processus partagent le même espace mémoire et les mêmes ressources"},
+            {'label': 'B', 'text': "Un thread dispose toujours d'une mémoire séparée et protégée de son processus père"},
+            {'label': 'C', 'text': "Un processus ne peut jamais exécuter plusieurs threads simultanément"},
+            {'label': 'D', 'text': "Les threads sont gérés uniquement par la carte graphique"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Un processus est une unité d'exécution isolée avec sa table de pages mémoire. Les threads légers au sein d'un même processus partagent la mémoire globale, rendant leur communication très rapide.",
+    },
+
+    # ==========================================
+    # 7. INTELLIGENCE ARTIFICIELLE & DATA SCIENCE
+    # ==========================================
+    {
+        'topics': {'ia', 'intelligence', 'artificielle', 'machine', 'learning', 'apprentissage', 'supervise', 'clustering'},
+        'prompt': "Quelle est la caractéristique distinctive de l'apprentissage automatique supervisé (Supervised Learning) ?",
+        'options': [
+            {'label': 'A', 'text': "Le modèle s'entraîne sur un jeu de données contenant des exemples d'entrée accompagnés de leurs étiquettes cibles correspondantes (ground truth)"},
+            {'label': 'B', 'text': "Le modèle n'utilise aucune étiquette et regroupe les données de manière autonome"},
+            {'label': 'C', 'text': "L'apprentissage ne nécessite aucun algorithme mathématique"},
+            {'label': 'D', 'text': "Il apprend uniquement en recevant des récompenses positives ou négatives dans un jeu"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "En apprentissage supervisé, le modèle apprend une fonction de prédiction à partir de paires entrée-sortie étiquetées (ex: détection de spams, régression de prix).",
+    },
+    {
+        'topics': {'ia', 'intelligence', 'artificielle', 'overfitting', 'surapprentissage', 'generalisation', 'modele'},
+        'prompt': "Qu'est-ce que le phénomène de surapprentissage (Overfitting) en Intelligence Artificielle et comment le combattre ?",
+        'options': [
+            {'label': 'A', 'text': "Le modèle mémorise le bruit des données d'entraînement au détriment de sa capacité à généraliser sur de nouvelles données ; on utilise la régularisation (Dropout, L2) et la validation croisée pour l'atténuer"},
+            {'label': 'B', 'text': "Le modèle est trop simple et ne parvient pas à capturer la logique des données"},
+            {'label': 'C', 'text': "Le modèle s'arrête d'apprendre dès la première itération"},
+            {'label': 'D', 'text': "C'est l'objectif recherché pour obtenir 100% de précision sur toutes les bases de données"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Le surapprentissage se traduit par une excellente performance sur les données d'entraînement mais de mauvaises prédictions sur les données réelles de test.",
+    },
+
+    # ==========================================
+    # 8. PROGRAMMATION C & ALGORITHMIQUE
+    # ==========================================
+    {
+        'topics': {'c', 'programme', 'programmation', 'pointeur', 'pointeurs', 'adresse', 'memoire', 'malloc'},
+        'prompt': "En langage C, à quoi sert l'opérateur unaire d'indirection '*' appliqué à une variable pointeur (ex: *ptr) ?",
+        'options': [
+            {'label': 'A', 'text': "Accéder à la valeur stockée à l'adresse mémoire pointée par le pointeur (déréférencement)"},
+            {'label': 'B', 'text': "Obtenir l'adresse mémoire de la variable ptr elle-même"},
+            {'label': 'C', 'text': "Multiplier automatiquement le pointeur par deux"},
+            {'label': 'D', 'text': "Libérer la mémoire allouée par le système"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "L'opérateur '&' donne l'adresse d'une variable, tandis que l'opérateur '*' permet de lire ou modifier la valeur située à l'adresse pointée (déréférencement).",
+    },
+    {
+        'topics': {'c', 'programme', 'programmation', 'compilation', 'compilateur', 'source', 'objet', 'executable'},
+        'prompt': "Quel est l'ordre exact des étapes pour transformer un fichier source *.c en un programme binaire exécutable ?",
+        'options': [
+            {'label': 'A', 'text': "Préprocesseur (directives #) ➔ Compilateur (code assembleur/objet *.o) ➔ Éditeur de liens (liaison avec les bibliothèques) ➔ Exécutable"},
+            {'label': 'B', 'text': "Éditeur de liens ➔ Compilation ➔ Écriture de l'algorithme"},
+            {'label': 'C', 'text': "Exécution directe ➔ Préprocesseur ➔ Interprétation"},
+            {'label': 'D', 'text': "Fichier objet (*.o) ➔ Fichier source (*.c) ➔ Fichier binaire"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "La chaîne de compilation standard traite d'abord les macros et inclusions (#include), compile le code en objets (.o), puis l'éditeur de liens lie ces objets aux bibliothèques pour produire l'exécutable.",
+    },
+    {
+        'topics': {'c', 'programme', 'programmation', 'main', 'stdio', 'printf', 'scanf', 'entree', 'sortie'},
+        'prompt': "En langage C, quel est le rôle de la directive #include <stdio.h> et de la fonction main() ?",
+        'options': [
+            {'label': 'A', 'text': "#include <stdio.h> donne accès aux fonctions standard d'entrée/sortie (printf, scanf) et main() est le point d'entrée d'exécution obligatoire"},
+            {'label': 'B', 'text': "#include <stdio.h> déclare une boucle infinie de sécurité"},
+            {'label': 'C', 'text': "main() est facultative si le fichier ne contient que des fonctions d'affichage"},
+            {'label': 'D', 'text': "<stdio.h> sert uniquement à déclarer des variables entières globales"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "Tout programme C exécutable doit posséder une fonction main(), et <stdio.h> (Standard Input Output) déclare les prototypes de communication avec la console.",
+    },
+    {
+        'topics': {'c', 'programme', 'programmation', 'boucle', 'for', 'while', 'iteration'},
+        'prompt': "Quelle est la bonne pratique pour l'usage de la boucle for (int i = 0; i < N; i++) en programmation C ?",
+        'options': [
+            {'label': 'A', 'text': "Elle est réservée aux boucles dont le nombre d'itérations est déterminé à l'avance, en évitant de modifier la variable d'itération à l'intérieur du bloc"},
+            {'label': 'B', 'text': "On doit systématiquement modifier la variable N à chaque tour de boucle"},
+            {'label': 'C', 'text': "Elle ne peut être exécutée qu'une seule fois au maximum"},
+            {'label': 'D', 'text': "Elle remplace les instructions conditionnelles if/else"},
+        ],
+        'correctAnswers': ['A'],
+        'explanation': "La boucle for utilise une variable d'indice claire pour parcourir un intervalle déterminé. Modifier l'indice manuellement à l'intérieur du corps de la boucle introduit des risques majeurs d'erreur ou de boucle infinie.",
     },
 ]
 
@@ -1957,7 +2300,8 @@ def _generate_quiz_questions(title='', description='', difficulty='medium', ques
     scored_bank = []
     for idx, item in enumerate(_CURATED_QUIZ_BANK):
         overlap = len(query_tokens & item['topics'])
-        scored_bank.append((overlap, -idx, item))
+        if overlap > 0:
+            scored_bank.append((overlap, -idx, item))
     scored_bank.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
 
     selected = list(ai_questions)
@@ -2912,70 +3256,33 @@ def _domain_api(request, body, parts, user):
                     ],
                 })
             if action == 'remediation-quiz':
-                acquis = str(body.get('acquis') or 'Programmation C').strip()
-                course_id = str(body.get('courseId') or 'Programmation C').strip()
+                acquis = str(body.get('acquis') or body.get('subject') or body.get('title') or body.get('courseId') or 'Programmation C').strip()
+                course_id = str(body.get('courseId') or acquis).strip()
                 chapter_id = str(body.get('chapterId') or 'Chapitre 1').strip()
+                difficulty = str(body.get('difficulty') or 'medium').strip()
+                try:
+                    q_count = max(3, min(int(body.get('questionCount') or 5), 15))
+                except (TypeError, ValueError):
+                    q_count = 5
+
+                generated_questions = _generate_quiz_questions(
+                    title=acquis,
+                    description=f"Quiz ciblé de révision et consolidation des compétences sur : {acquis}",
+                    difficulty=difficulty,
+                    question_count=q_count,
+                    source_chapter=chapter_id,
+                    course_id=course_id,
+                )
                 return JsonResponse({
                     'id': f'remediation-{uuid.uuid4().hex[:8]}',
-                    'title': f'Renforcer {acquis}',
+                    'title': f'Quiz : {acquis}',
                     'type': 'quiz',
                     'courseId': course_id,
                     'chapterId': chapter_id,
-                    'quizDurationMinutes': 10,
+                    'quizDurationMinutes': max(5, q_count * 2),
                     'quizPassingScore': 70,
-                    'description': f'Quiz ciblé sur le cours ({acquis}) pour consolider vos acquis.',
-                    'quizQuestions': [
-                        {
-                            'id': 'q1',
-                            'prompt': "Quelle est la première étape à réaliser avant d'écrire un programme en langage C ?",
-                            'options': [
-                                'Compiler le programme',
-                                "Écrire l'algorithme",
-                                'Positionner le problème à résoudre',
-                                'Tester le code sur un ordinateur',
-                            ],
-                            'correctAnswers': [2],
-                            'explanation': 'La première étape est toujours la position du problème (bonne formulation).',
-                        },
-                        {
-                            'id': 'q2',
-                            'prompt': 'Quel est le rôle du compilateur en langage C ?',
-                            'options': [
-                                'Exécuter directement le code',
-                                'Traduire le code source (*.c) en langage machine (*.o)',
-                                'Corriger les erreurs automatiquement',
-                                "Écrire l'algorithme",
-                            ],
-                            'correctAnswers': [1],
-                            'explanation': 'Le compilateur traduit les fichiers source en fichiers objets en langage machine.',
-                        },
-                        {
-                            'id': 'q3',
-                            'prompt': 'Quelle est la fonction principale obligatoire de tout programme en langage C ?',
-                            'options': ['start()', 'program()', 'main()', 'init()'],
-                            'correctAnswers': [2],
-                            'explanation': 'En langage C, la fonction particulière main() est toujours la fonction principale.',
-                        },
-                        {
-                            'id': 'q4',
-                            'prompt': 'Que va afficher : int x = 5; if (x > 3) if (x < 10) printf("A"); else printf("B"); ?',
-                            'options': ['A', 'B', 'Rien', 'Erreur'],
-                            'correctAnswers': [0],
-                            'explanation': 'x vaut 5, donc x > 3 et x < 10 sont vraies : le programme affiche A.',
-                        },
-                        {
-                            'id': 'q5',
-                            'prompt': 'Quand utilise-t-on principalement la boucle « for » en langage C ?',
-                            'options': [
-                                "Quand le nombre de répétitions est connu à l'avance",
-                                'Uniquement pour afficher du texte sans répéter',
-                                'Pour remplacer la bibliothèque stdio.h',
-                                'Pour déclarer une bibliothèque',
-                            ],
-                            'correctAnswers': [0],
-                            'explanation': "La boucle for permet d'exécuter un bloc d'instructions un nombre de fois connu à l'avance grâce à un compteur.",
-                        },
-                    ],
+                    'description': f'Quiz ciblé sur le sujet ({acquis}) pour évaluer et consolider vos acquis.',
+                    'quizQuestions': generated_questions,
                 })
         if sub == 'progress' and request.method == 'POST':
             content_id = str(body.get('contentId') or '').strip()

@@ -437,6 +437,22 @@ export class StudentDashboard implements OnInit, OnDestroy {
   ];
 
   activeTab: StudentTab = 'parcours';
+  aiQuizModalOpen = false;
+  aiQuizSelectedSubject = 'Système de réseaux';
+  aiQuizCustomSubject = '';
+  aiQuizDifficulty: 'debutant' | 'intermediaire' | 'avance' = 'intermediaire';
+  aiQuizQuestionCount = 5;
+  aiQuizGenerating = false;
+  readonly popularAiQuizSubjects: string[] = [
+    'Système de réseaux',
+    'Mathématique de base',
+    'Infographie et multimédia',
+    'Bases de Données & SQL',
+    'Développement Web',
+    'Programmation C & Algorithmique',
+    'Systèmes d\'Exploitation & Linux',
+    'Intelligence Artificielle',
+  ];
   loading = false;
   error = '';
   chatbotPopupOpen = false;
@@ -5619,43 +5635,95 @@ export class StudentDashboard implements OnInit, OnDestroy {
     ];
   }
 
-  generateAiRecommendationQuiz(subject?: string) {
-    const focusSubject = subject || this.portfolioWeaknesses?.[0] || this.courseCatalog[0]?.title || 'Programmation C & Algorithmique';
+  openAiQuizModal(initialSubject?: string) {
+    if (initialSubject) {
+      this.aiQuizSelectedSubject = initialSubject;
+    } else if (this.portfolioWeaknesses.length > 0) {
+      this.aiQuizSelectedSubject = this.portfolioWeaknesses[0];
+    } else if (this.courseCatalog.length > 0) {
+      this.aiQuizSelectedSubject = this.courseCatalog[0].title;
+    } else {
+      this.aiQuizSelectedSubject = "Système de réseaux";
+    }
+    this.aiQuizCustomSubject = "";
+    this.aiQuizModalOpen = true;
+  }
+
+  closeAiQuizModal() {
+    this.aiQuizModalOpen = false;
+    this.aiQuizGenerating = false;
+  }
+
+  selectAiQuizSubject(subject: string) {
+    this.aiQuizSelectedSubject = subject;
+    this.aiQuizCustomSubject = "";
+  }
+
+  confirmGenerateAiQuiz() {
+    const finalSubject = (this.aiQuizCustomSubject.trim() || this.aiQuizSelectedSubject || "Système de réseaux").trim();
+    this.aiQuizGenerating = true;
+    this.generateAiRecommendationQuiz(finalSubject, this.aiQuizDifficulty, this.aiQuizQuestionCount, () => {
+      this.aiQuizModalOpen = false;
+      this.aiQuizGenerating = false;
+    });
+  }
+
+  generateAiRecommendationQuiz(
+    subject?: string,
+    difficulty: string = "intermediaire",
+    questionCount: number = 5,
+    onComplete?: () => void,
+  ) {
+    const focusSubject = (
+      subject ||
+      this.portfolioWeaknesses[0] ||
+      this.courseCatalog[0]?.title ||
+      "Système de réseaux"
+    ).trim();
     this.remediationQuizLoadingKey = focusSubject;
 
     this.http
-      .post<any>('/api/student/portfolio/remediation-quiz', {
+      .post<any>("/api/student/portfolio/remediation-quiz", {
         acquis: focusSubject,
+        subject: focusSubject,
         courseId: focusSubject,
-        chapterId: 'Chapitre 1',
+        chapterId: "Chapitre 1",
+        difficulty: difficulty,
+        questionCount: questionCount,
         level: this.studentLevel,
       })
       .subscribe({
         next: quiz => {
-          this.remediationQuizLoadingKey = '';
+          this.remediationQuizLoadingKey = "";
+          if (onComplete) {
+            onComplete();
+          }
           const quizItem: RecommendationItem = {
             id: quiz.id || `ai-quiz-${Date.now()}`,
-            icon: 'psychology',
+            icon: "psychology",
             title: quiz.title || `Quiz IA : ${focusSubject}`,
-            type: 'Quiz',
+            type: "Quiz",
             level: this.levelLabel(this.studentLevel),
             duration: `${quiz.quizDurationMinutes || 10} min`,
-            reason: quiz.description || `Quiz généré par l'IA sur ${focusSubject} pour évaluer et consolider vos acquis.`,
-            contentType: 'quiz',
+            reason: quiz.description || `Quiz ciblé généré par l'IA sur ${focusSubject} pour évaluer et consolider vos acquis.`,
+            contentType: "quiz",
             quizDurationMinutes: quiz.quizDurationMinutes || 10,
             quizPassingScore: quiz.quizPassingScore || 70,
             quizQuestions: quiz.quizQuestions || [],
             quizAttempts: 1,
-            quizMode: 'portfolio-remediation',
+            quizMode: "portfolio-remediation",
             isAiGenerated: true,
-            category: 'ai',
-            focusKeywords: [focusSubject, 'Entraînement IA', 'Quiz'],
+            category: "ai",
+            focusKeywords: [focusSubject, "Entraînement IA", "Quiz ciblé"],
           };
           this.selectedStandaloneQuizId = quizItem.id;
           this.selectedStandaloneQuiz = quizItem;
         },
         error: () => {
-          this.remediationQuizLoadingKey = '';
+          this.remediationQuizLoadingKey = "";
+          if (onComplete) {
+            onComplete();
+          }
           const fallbackQuiz = this.buildLocalAiQuiz(focusSubject);
           this.selectedStandaloneQuizId = fallbackQuiz.id;
           this.selectedStandaloneQuiz = fallbackQuiz;
@@ -5665,84 +5733,407 @@ export class StudentDashboard implements OnInit, OnDestroy {
 
   buildLocalAiQuiz(subject: string): RecommendationItem {
     const cleanSub = this.cleanEncoding(subject);
+    const subLower = cleanSub.toLowerCase();
+
+    let questions: any[] = [];
+
+    if (subLower.includes("réseau") || subLower.includes("reseau") || subLower.includes("network") || subLower.includes("osi") || subLower.includes("ip")) {
+      questions = [
+        {
+          id: "q1",
+          prompt: "Dans le modèle OSI à 7 couches, quelle couche assure le routage et l'adressage logique des paquets ?",
+          options: [
+            "Couche 3 - Réseau (IP)",
+            "Couche 2 - Liaison de données (MAC)",
+            "Couche 4 - Transport (TCP/UDP)",
+            "Couche 1 - Physique",
+          ],
+          correctAnswers: [0],
+          explanation: "La couche 3 (Réseau) est responsable de l'adressage logique (adresses IP) et de la détermination du meilleur chemin via les routeurs.",
+        },
+        {
+          id: "q2",
+          prompt: "Combien d'adresses d'hôtes utilisables permet un masque de sous-réseau /24 (255.255.255.0) en IPv4 ?",
+          options: [
+            "254 hôtes",
+            "256 hôtes",
+            "128 hôtes",
+            "512 hôtes",
+          ],
+          correctAnswers: [0],
+          explanation: "2^8 = 256 adresses moins l'adresse réseau (.0) et l'adresse de diffusion broadcast (.255) = 254 hôtes utilisables.",
+        },
+        {
+          id: "q3",
+          prompt: "Quelle est la différence fondamentale entre les protocoles TCP et UDP ?",
+          options: [
+            "TCP garantit la remise ordonnée des segments avec acquittement, alors qu'UDP est sans connexion et priorise la rapidité",
+            "UDP garantit la livraison et retransmet les paquets perdus",
+            "TCP ne fonctionne qu'en Wi-Fi",
+            "UDP chiffre automatiquement toutes les trames",
+          ],
+          correctAnswers: [0],
+          explanation: "TCP vérifie la livraison par des acquittements (ACK) et contrôle de flux. UDP envoie directement les paquets, idéal pour le streaming audio/vidéo.",
+        },
+        {
+          id: "q4",
+          prompt: "Quel protocole permet de traduire un nom de domaine (ex: eduvia.tn) en adresse IP numérique ?",
+          options: [
+            "DNS (Domain Name System) sur le port 53",
+            "DHCP (Dynamic Host Configuration Protocol)",
+            "HTTP sur le port 80",
+            "FTP sur le port 21",
+          ],
+          correctAnswers: [0],
+          explanation: "Le DNS est l'annuaire universel d'Internet convertissant les noms de domaine en adresses IP.",
+        },
+        {
+          id: "q5",
+          prompt: "À quel niveau du modèle OSI opère un commutateur (switch) Ethernet standard ?",
+          options: [
+            "Couche 2 - Liaison de données (utilise les adresses MAC)",
+            "Couche 3 - Réseau (utilise les adresses IP)",
+            "Couche 7 - Application",
+            "Couche 4 - Transport",
+          ],
+          correctAnswers: [0],
+          explanation: "Le switch travaille en couche 2 et commute les trames ethernet en consultant sa table d'adresses MAC physiques.",
+        },
+      ];
+    } else if (subLower.includes("math") || subLower.includes("algèbre") || subLower.includes("algebre") || subLower.includes("calcul") || subLower.includes("matrice")) {
+      questions = [
+        {
+          id: "q1",
+          prompt: "À quelle condition peut-on multiplier une matrice A (dimension m x n) par une matrice B (dimension p x q) ?",
+          options: [
+            "Le nombre de colonnes de A doit être égal au nombre de lignes de B (n = p)",
+            "A et B doivent être carrées de même dimension",
+            "Le produit matriciel est toujours possible sans condition",
+            "m doit être égal à q et n doit être égal à p",
+          ],
+          correctAnswers: [0],
+          explanation: "Pour effectuer le produit A x B, chaque ligne de A rencontre une colonne de B : il faut donc que n = p. La matrice obtenue est de taille (m x q).",
+        },
+        {
+          id: "q2",
+          prompt: "Quelle est la condition nécessaire et suffisante pour qu'une matrice carrée soit inversible ?",
+          options: [
+            "Son déterminant doit être non nul (det(M) ≠ 0)",
+            "Tous ses coefficients diagonaux doivent valoir 1",
+            "Son déterminant doit être strictement positif",
+            "Elle doit être symétrique",
+          ],
+          correctAnswers: [0],
+          explanation: "Une matrice carrée M possède une inverse M⁻¹ si et seulement si son déterminant est différent de zéro.",
+        },
+        {
+          id: "q3",
+          prompt: "Quelle est la dérivée de la fonction f(x) = ln(x) sur son domaine de définition ]0, +∞[ ?",
+          options: [
+            "f'(x) = 1 / x",
+            "f'(x) = e^x",
+            "f'(x) = x",
+            "f'(x) = 1 / x²",
+          ],
+          correctAnswers: [0],
+          explanation: "La dérivée du logarithme népérien ln(x) est 1/x pour tout x strictement positif.",
+        },
+        {
+          id: "q4",
+          prompt: "En probabilités, si deux événements A et B sont indépendants, quelle relation est exacte ?",
+          options: [
+            "P(A ∩ B) = P(A) × P(B)",
+            "P(A ∪ B) = P(A) + P(B)",
+            "P(A ∩ B) = 0",
+            "P(A) = 1 - P(B)",
+          ],
+          correctAnswers: [0],
+          explanation: "La définition d'événements indépendants est que la réalisation de l'un n'influence pas l'autre, donc P(A ∩ B) = P(A) × P(B).",
+        },
+        {
+          id: "q5",
+          prompt: "Quelle est la formule générale de l'intégration par parties ?",
+          options: [
+            "∫ u(x) v'(x) dx = u(x) v(x) - ∫ u'(x) v(x) dx",
+            "∫ u(x) v'(x) dx = u'(x) v(x) + ∫ u(x) v'(x) dx",
+            "∫ u(x) v(x) dx = u(x) / v(x)",
+            "∫ u(x) v'(x) dx = [u(x) + v(x)]²",
+          ],
+          correctAnswers: [0],
+          explanation: "L'intégration par parties provient de la formule de dérivation d'un produit : (uv)' = u'v + uv'.",
+        },
+      ];
+    } else if (subLower.includes("infograph") || subLower.includes("multimédia") || subLower.includes("multimedia") || subLower.includes("design") || subLower.includes("image")) {
+      questions = [
+        {
+          id: "q1",
+          prompt: "Quel est l'avantage majeur d'une image vectorielle (ex: SVG) sur une image matricielle (ex: JPEG, PNG) ?",
+          options: [
+            "Elle peut être agrandie à n'importe quelle échelle sans aucune perte de qualité ni pixellisation",
+            "Elle contient toujours un nombre de pixels plus élevé",
+            "Elle ne peut être affichée qu'en noir et blanc",
+            "Elle est obligatoirement plus volumineuse en mégaoctets",
+          ],
+          correctAnswers: [0],
+          explanation: "Les images vectorielles sont constituées de formules mathématiques géométriques, ce qui permet de les zoomer à l'infini sans jamais perdre en netteté.",
+        },
+        {
+          id: "q2",
+          prompt: "Pour préparer un document destiné à l'impression papier haute définition, quel mode colorimétrique et quelle résolution faut-il choisir ?",
+          options: [
+            "Mode CMJN à 300 DPI",
+            "Mode RVB à 72 DPI",
+            "Mode Niveaux de gris à 16 DPI",
+            "Mode Hexadécimal à 96 DPI",
+          ],
+          correctAnswers: [0],
+          explanation: "L'imprimerie utilise la synthèse soustractive CMJN (Cyan, Magenta, Jaune, Noir) à une résolution standard de 300 DPI pour un rendu net.",
+        },
+        {
+          id: "q3",
+          prompt: "Quelle caractéristique distingue le format d'image PNG du format JPEG ?",
+          options: [
+            "PNG supporte la transparence (canal Alpha) et compresse sans perte",
+            "PNG compresse toujours de façon destructrice avec perte d'information",
+            "JPEG gère nativement le canal alpha transparent",
+            "PNG ne peut stocker que 256 couleurs maximum",
+          ],
+          correctAnswers: [0],
+          explanation: "PNG offre une compression sans perte (lossless) et prend en charge le canal Alpha permettant des transparences nettes.",
+        },
+        {
+          id: "q4",
+          prompt: "En infographie 3D, de quoi est constitué un maillage polygonal (mesh) standard ?",
+          options: [
+            "De sommets (vertices), d'arêtes (edges) et de faces (polygones)",
+            "Uniquement de pixels 2D étirés",
+            "De pistes sonores audio synchronisées",
+            "De scripts JavaScript CSS",
+          ],
+          correctAnswers: [0],
+          explanation: "Un objet 3D polygonal est composé de points dans l'espace (sommets), reliés par des segments (arêtes) formant des surfaces planes (faces).",
+        },
+        {
+          id: "q5",
+          prompt: "Qu'est-ce que le « Ray Tracing » (lancer de rayons) en rendu graphique ?",
+          options: [
+            "Une technique qui simule le parcours physique des rayons lumineux pour créer des reflets, ombres et réfractions ultra-réalistes",
+            "Une méthode pour accélérer la frappe au clavier",
+            "Un compresseur de fichiers d'animation",
+            "Un filtre de flou appliqué à toute l'image",
+          ],
+          correctAnswers: [0],
+          explanation: "Le Ray Tracing trace les rayons de lumière depuis la caméra vers les objets pour reproduire fidèlement l'éclairage et les réflexions du monde réel.",
+        },
+      ];
+    } else if (subLower.includes("sql") || subLower.includes("bdd") || subLower.includes("donnée") || subLower.includes("donnee") || subLower.includes("database")) {
+      questions = [
+        {
+          id: "q1",
+          prompt: "Dans une base de données relationnelle, quelle est la règle fondamentale d'une clé primaire (PRIMARY KEY) ?",
+          options: [
+            "Elle doit être strictement unique pour chaque ligne et ne peut jamais contenir de valeur NULL",
+            "Elle peut contenir plusieurs valeurs identiques dans la table",
+            "Elle sert uniquement à afficher des images",
+            "Elle doit obligatoirement être une chaîne de plus de 20 caractères",
+          ],
+          correctAnswers: [0],
+          explanation: "La clé primaire identifie de façon unique et non ambiguë chaque tuple d'une relation, interdisant tout doublon et toute valeur NULL.",
+        },
+        {
+          id: "q2",
+          prompt: "Quelle est la différence d'exécution entre les clauses SQL WHERE et HAVING ?",
+          options: [
+            "WHERE filtre les lignes individuelles avant l'agrégation GROUP BY, tandis que HAVING filtre après l'agrégation (ex: HAVING COUNT(*) > 2)",
+            "HAVING s'applique avant la lecture des données",
+            "WHERE ne peut être utilisé qu'une seule fois par base de données",
+            "HAVING remplace la commande SELECT",
+          ],
+          correctAnswers: [0],
+          explanation: "WHERE filtre les enregistrements source, alors que HAVING filtre les groupes calculés par les fonctions d'agrégation.",
+        },
+        {
+          id: "q3",
+          prompt: "Que retourne la requête SELECT * FROM A LEFT JOIN B ON A.id = B.a_id ?",
+          options: [
+            "Toutes les lignes de la table A, complétées par les valeurs de B ou NULL en l'absence de correspondance",
+            "Uniquement les lignes ayant une correspondance stricte dans A et dans B",
+            "Uniquement les lignes de la table B",
+            "Une erreur de syntaxe systématique",
+          ],
+          correctAnswers: [0],
+          explanation: "LEFT JOIN conserve l'intégralité des lignes de la table gauche (A), y compris celles qui n'ont aucune correspondance dans la table droite (B).",
+        },
+        {
+          id: "q4",
+          prompt: "Que garantit la propriété d'Atomicité dans les transactions ACID d'une base de données ?",
+          options: [
+            "Toutes les opérations de la transaction sont validées ensemble ou aucune n'est appliquée en cas d'erreur (tout ou rien)",
+            "Chaque transaction ne manipule qu'un seul bit à la fois",
+            "Les données sont stockées au format atomique XML",
+            "La base de données est accessible sans aucun mot de passe",
+          ],
+          correctAnswers: [0],
+          explanation: "L'atomicité assure que si une commande de la transaction échoue, toutes les modifications précédentes sont annulées (ROLLBACK).",
+        },
+        {
+          id: "q5",
+          prompt: "À quoi sert un index B-Tree sur une colonne fréquemment recherchée d'une table SQL ?",
+          options: [
+            "Accélérer considérablement les requêtes de recherche SELECT en évitant le scan séquentiel de toute la table",
+            "Chiffrer les données contre le piratage",
+            "Supprimer automatiquement les lignes orphelines",
+            "Réduire la taille du disque dur",
+          ],
+          correctAnswers: [0],
+          explanation: "L'index organise les pointeurs dans un arbre équilibré, permettant de localiser une ligne en temps logarithmique O(log N).",
+        },
+      ];
+    } else if (subLower.includes("web") || subLower.includes("html") || subLower.includes("css") || subLower.includes("javascript") || subLower.includes("js")) {
+      questions = [
+        {
+          id: "q1",
+          prompt: "Pourquoi est-il essentiel d'utiliser les balises sémantiques HTML5 (<header>, <nav>, <main>, <article>, <footer>) ?",
+          options: [
+            "Elles structurent le sens du document pour les lecteurs d'écran (accessibilité) et améliorent le référencement naturel (SEO)",
+            "Le navigateur refuse d'afficher la page web si elles sont absentes",
+            "Elles compressent automatiquement les fichiers vidéo de la page",
+            "Elles compilent le code HTML en code assembleur",
+          ],
+          correctAnswers: [0],
+          explanation: "La sémantique HTML5 donne un sens clair aux blocs de la page pour les moteurs de recherche et les aides techniques.",
+        },
+        {
+          id: "q2",
+          prompt: "En CSS, quelle est la distinction majeure entre Flexbox et CSS Grid ?",
+          options: [
+            "Flexbox est optimisé pour les mises en page 1D (ligne ou colonne), alors que CSS Grid gère les grilles 2D (lignes et colonnes simultanément)",
+            "Flexbox ne fonctionne pas sur mobile",
+            "CSS Grid est réservé aux tableaux de données chiffrées",
+            "Flexbox est déprécié",
+          ],
+          correctAnswers: [0],
+          explanation: "Flexbox gère l'alignement sur un seul axe à la fois, tandis que Grid structure les deux dimensions de la page.",
+        },
+        {
+          id: "q3",
+          prompt: "Quel code de statut HTTP signale la création réussie d'une nouvelle ressource sur le serveur après une requête POST ?",
+          options: [
+            "201 Created",
+            "200 OK",
+            "400 Bad Request",
+            "404 Not Found",
+          ],
+          correctAnswers: [0],
+          explanation: "Le code HTTP 201 est la réponse standard confirmant qu'une ressource a bien été créée suite à la requête.",
+        },
+        {
+          id: "q4",
+          prompt: "En JavaScript moderne, quel est l'avantage de la syntaxe async / await par rapport aux promesses imbriquées ?",
+          options: [
+            "Écrire du code asynchrone lisible de façon linéaire et simplifier la capture des erreurs avec try / catch",
+            "Bloquer le navigateur pendant le téléchargement",
+            "Remplacer obligatoirement l'usage des fonctions",
+            "Empêcher les requêtes réseau",
+          ],
+          correctAnswers: [0],
+          explanation: "async / await permet de manipuler les Promesses avec une clarté équivalente au code synchrone traditionnel.",
+        },
+        {
+          id: "q5",
+          prompt: "Qu'est-ce que la politique de même origine (Same-Origin Policy - SOP) et comment la gérer côté API ?",
+          options: [
+            "Une règle de sécurité des navigateurs empêchant un script d'un domaine d'accéder aux données d'un autre domaine, assouplie grâce aux en-têtes CORS",
+            "Un outil pour compresser les feuilles de styles CSS",
+            "Un algorithme de hachage de mot de passe",
+            "Un protocole de routage réseau",
+          ],
+          correctAnswers: [0],
+          explanation: "La SOP protège l'utilisateur contre les requêtes non autorisées. Le mécanisme CORS permet au serveur d'autoriser explicitement certains domaines.",
+        },
+      ];
+    } else {
+      questions = [
+        {
+          id: "q1",
+          prompt: `Quel est l'objectif fondamental et le champ d'application de : « ${cleanSub} » ?`,
+          options: [
+            `Structurer les concepts clés, définir les spécifications et résoudre les problématiques associées à ${cleanSub}`,
+            "Ignorer les contraintes de conception et exécuter sans phase d'analyse",
+            "Remplacer tous les standards existants sans justification technique",
+            "Supprimer les tests de validation",
+          ],
+          correctAnswers: [0],
+          explanation: `L'étude de ${cleanSub} exige une analyse rigoureuse des besoins, l'application des bonnes pratiques et la validation méthodique des résultats.`,
+        },
+        {
+          id: "q2",
+          prompt: `Quelle bonne pratique permet de garantir la robustesse et la fiabilité dans « ${cleanSub} » ?`,
+          options: [
+            "Effectuer des tests rigoureux avec des cas limites et vérifier la conformité aux spécifications",
+            "Ne tester qu'un seul scénario nominal sans vérifier les cas d'erreur",
+            "Désactiver la journalisation et les messages d'avertissement",
+            "Déployer directement sans revue ni contrôle préalable",
+          ],
+          correctAnswers: [0],
+          explanation: "La fiabilité repose sur l'anticipation des cas d'erreur, la validation des entrées/sorties et la couverture par des tests réguliers.",
+        },
+        {
+          id: "q3",
+          prompt: `Dans la gestion de « ${cleanSub} », quel est l'intérêt principal d'une architecture modulaire ?`,
+          options: [
+            "Faciliter la maintenance, réutiliser les composants et isoler les responsabilités",
+            "Complexifier inutilement le système",
+            "Augmenter le temps de réponse",
+            "Empêcher la collaboration entre les équipes",
+          ],
+          correctAnswers: [0],
+          explanation: "La modularité permet de décomposer un problème vaste en sous-modules indépendants, simples à tester et à maintenir.",
+        },
+        {
+          id: "q4",
+          prompt: `Face à un dysfonctionnement ou une anomalie dans « ${cleanSub} », quelle démarche méthodique appliquer ?`,
+          options: [
+            "Analyser les journaux d'erreurs, isoler le sous-composant défaillant et reproduire le cas pas à pas",
+            "Réécrire l'intégralité du projet sans identifier la cause racine",
+            "Ignorer l'incident tant qu'aucune alerte critique n'est levée",
+            "Modifier des paramètres au hasard jusqu'à ce que l'erreur disparaisse",
+          ],
+          correctAnswers: [0],
+          explanation: "Le diagnostic d'incident s'appuie sur la traçabilité (logs), l'analyse des causes racines et la reproductibilité du problème.",
+        },
+        {
+          id: "q5",
+          prompt: `Quel indicateur permet d'évaluer objectivement l'efficacité et la maîtrise de « ${cleanSub} » ?`,
+          options: [
+            "Le taux de réussite aux évaluations, le respect des normes et la conformité des livrables",
+            "Le nombre de lignes écrites sans considération de qualité",
+            "La rapidité d'abandon face aux difficultés",
+            "La complexité inutile introduite dans la solution",
+          ],
+          correctAnswers: [0],
+          explanation: "L'efficacité se mesure par la pertinence de la solution, la conformité aux attentes et la qualité pérenne des résultats.",
+        },
+      ];
+    }
+
     return {
       id: `ai-quiz-${Date.now()}`,
-      icon: 'psychology',
+      icon: "psychology",
       title: `Quiz IA : ${cleanSub}`,
-      type: 'Quiz',
+      type: "Quiz",
       level: this.levelLabel(this.studentLevel),
-      duration: '10 min',
+      duration: "10 min",
       reason: `Quiz d'entraînement interactif généré par l'IA sur ${cleanSub}.`,
-      contentType: 'quiz',
+      contentType: "quiz",
       quizDurationMinutes: 10,
       quizPassingScore: 70,
-      quizMode: 'portfolio-remediation',
+      quizMode: "portfolio-remediation",
       isAiGenerated: true,
-      category: 'ai',
+      category: "ai",
       quizAttempts: 1,
-      focusKeywords: [cleanSub, 'Quiz IA', 'Entraînement'],
-      quizQuestions: [
-        {
-          id: 'q1',
-          prompt: `Quelle est la première démarche méthodologique pour aborder : ${cleanSub} ?`,
-          options: [
-            'Analyser le problème et poser les spécifications claires',
-            'Commencer à écrire du code au hasard',
-            'Ignorer les données d’entrée',
-            'Exécuter directement sans compiler',
-          ],
-          correctAnswers: [0],
-          explanation: 'La première étape consiste toujours à analyser le besoin, définir les entrées/sorties et structurer la démarche.',
-        },
-        {
-          id: 'q2',
-          prompt: `Dans le contexte de ${cleanSub}, pourquoi la rigueur algorithmique est-elle essentielle ?`,
-          options: [
-            'Pour éviter les ambiguïtés et garantir la reproductibilité du traitement',
-            'Pour ralentir volontairement l’exécution',
-            'Pour remplacer le compilateur',
-            'Elle n’a pas d’importance réelle',
-          ],
-          correctAnswers: [0],
-          explanation: 'L’algorithmique formalise les étapes logiques sans dépendre d’une machine particulière.',
-        },
-        {
-          id: 'q3',
-          prompt: `Quelle bonne pratique permet de valider la maîtrise de ${cleanSub} ?`,
-          options: [
-            'Tester avec des cas limites et vérifier les résultats attendus',
-            'Ne tester qu’une seule fois avec un cas trivial',
-            'Supprimer les commentaires de documentation',
-            'Ignorer les messages d’avertissement',
-          ],
-          correctAnswers: [0],
-          explanation: 'Les tests avec des cas limites (valeurs nulles, extrêmes) assurent la robustesse de la solution.',
-        },
-        {
-          id: 'q4',
-          prompt: `Quel est l’avantage principal de structurer ${cleanSub} en sous-modules ou fonctions ?`,
-          options: [
-            'La réutilisabilité, la lisibilité et la facilité de maintenance',
-            'Augmenter inutilement la taille du fichier source',
-            'Bloquer la compilation',
-            'Empêcher le travail en équipe',
-          ],
-          correctAnswers: [0],
-          explanation: 'La modularité décompose un problème complexe en sous-problèmes simples et réutilisables.',
-        },
-        {
-          id: 'q5',
-          prompt: `En cas de résultat inattendu dans ${cleanSub}, quelle est la démarche recommandée ?`,
-          options: [
-            'Tracer l’état des variables et vérifier pas à pas le déroulement logique',
-            'Réécrire tout le projet de zéro immédiatement',
-            'Modifier des lignes au hasard',
-            'Arrêter l’évaluation',
-          ],
-          correctAnswers: [0],
-          explanation: 'Le traçage méthodique des variables permet d’isoler immédiatement l’origine de l’anomalie.',
-        },
-      ],
+      focusKeywords: [cleanSub, "Quiz IA", "Entraînement ciblé"],
+      quizQuestions: questions,
     };
   }
 
